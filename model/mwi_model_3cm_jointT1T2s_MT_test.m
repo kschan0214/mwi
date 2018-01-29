@@ -40,25 +40,30 @@ end
 nfa = length(fa);
 nt = length(te);
 
-kaxmy = kmyax * Aax/Amy;
-kexmy = kmyex * Aex/Amy;
+kaxmy = kmyax * Amy/Aax;
+kexmy = kmyex * Amy/Aex;
 kaxex = 0;
 kexax = 0;
+% kaxex = 100;
+% kexax = kaxex*Aax/Aex;
 
 m0 = [Amy;Aax;Aex];
 I1 = [1,1,1];
-Fs = 1i*2*pi*[fmy,0,0;0,fax,0;0,0,0];
+% Fs = 1i*2*pi*[fmy,0,0;0,fax,0;0,0,0];
 
 L1 = -[1/t1my,0,0;0,1/t1ax,0;0,0,1/t1ex] + [-(kmyax+kmyex),kaxmy,kexmy;kmyax,-(kaxmy+kaxex),kexax;kmyex,kaxex,-(kexmy+kexax)];
-L2s = -[1/t2smy,0,0;0,1/t2sax,0;0,0,1/t2sex] + [-(kmyax+kmyex),kaxmy,kexmy;kmyax,-(kaxmy+kaxex),kexax;kmyex,kaxex,-(kexmy+kexax)] + Fs;
+maskL1 = L1~=0;
+% L2s = -[1/t2smy,0,0;0,1/t2sax,0;0,0,1/t2sex] + [-(kmyax+kmyex),kaxmy,kexmy;kmyax,-(kaxmy+kaxex),kexax;kmyex,kaxex,-(kexmy+kexax)] + Fs;
+% assuming T2s << exchange time
+L2s = -[1/t2smy,1/t2sax,1/t2sex] + 1i*2*pi*[fmy,fax,0];
 
 s = zeros(nfa,nt);
 for kfa=1:nfa
     for kt=1:nt
-        t1w = sind(fa(kfa)*b1) .* (1-exp(L1 .* tr))/(1-cosd(fa(kfa)*b1).*exp(L1.*tr)) * m0;
-        t2sw = exp(L2s .* te(kt) );
+        t1w = sind(fa(kfa)*b1) .* (1-(exp(L1 .* tr).*maskL1))/(1-cosd(fa(kfa)*b1).*(exp(L1.*tr).*maskL1)) * m0;
+        t2sw = diag(exp(L2s .* te(kt) ));
 
-        s(kfa,kt) = abs(I1 * t2sw * t1w);
+        s(kfa,kt) = abs(I1 * (t2sw * t1w));
     end
 end
 
