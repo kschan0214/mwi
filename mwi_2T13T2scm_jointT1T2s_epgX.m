@@ -1,31 +1,20 @@
-%% fitRes = mwi_3cm_jointT1T2s(algoPara,imgPara)
+%% fitRes = mwi_2T13T2scm_jointT1T2s_epgX(algoPara,imgPara)
 %
 % Input
 % --------------
-% algoPara.maxIter    : maximum no. of iterations allowed (default: 500)
-% algoPara.isParallel : parallel computing(parfor) (default: false)
-% algoPara.usrDefine  : user defined fitting initial guesses and bounds
-% imgPara.te          : echo times (s)
-% imgPara.tr          : repetition times (s)
-% imgPara.fa          : flip angles (degree)
-% imgPara.img         : 5D images, [ny,ny,nz,necho,nfa]
-% imgPara.mask        : signal mask (default: rel. signal>0.05)
-% imgPara.b1map       : B1 map (default: 1)
 %
 % Output
 % --------------
-% fitRes.estimates    : estimates,[Amy,Aax,Aex,T2smy,T2sax,T2sex,T1my,T1ax,T1ex,fmy,fax]
-% fitRes.resnorm      : fitting residual norm
 %
 % Description:
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 19 January 2018
-% Date last modified: 23 february 2018
+% Date last modified:
 %
 %
-function fitRes = mwi_3cm_jointT1T2s(algoPara,imgPara)
+function fitRes = mwi_2T13T2scm_jointT1T2s_epgX(algoPara,imgPara)
 
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
@@ -37,10 +26,11 @@ end
 
 % capture all fitting settings
 maxIter    = algoPara.maxIter;
-usrDefine  = algoPara.usrDefine;
+userDefine  = algoPara.userDefine;
 DEBUG      = algoPara.DEBUG;
 % isParallel = algoPara.isParallel;
 
+% capture all images related data
 te    = imgPara.te;
 tr    = imgPara.tr;
 fa    = imgPara.fa;
@@ -55,11 +45,12 @@ numMagn    = length(imgPara.te);
 
 % lsqnonlin setting
 fdss = [1e-4,1e-4,1e-4,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8];
-options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'FiniteDifferenceStepSize',fdss,'MaxFunctionEvaluations',200*11);
+options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'FiniteDifferenceStepSize',fdss,'MaxFunctionEvaluations',200*11,...
+        'FunctionTolerance',1e-6,'StepTolerance',1e-1,'Display','off');
 
 % if DEBUG then display fitting message
 if DEBUG
-    options.Display = 'off';
+    options.Display = 'final';
 end
 
 % we are fitting 11 parameters with this model
@@ -72,67 +63,67 @@ for kz=1:nz
                 % 1st dim: T1w; 2nd dim: T2*w
                 s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                 b1 = b1map(ky,kx,kz);
-                [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,numMagn,usrDefine,options,DEBUG);
+                [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,numMagn,userDefine,options,DEBUG);
             end
         end
     end
 end
 
-% store fitting results into structure format
 fitRes.estimates = estimates;
 fitRes.resnorm   = resnorm;
 
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,fa,te,tr,b1,numMagn,usrDefine,options,DEBUG)
-if DEBUG
-    % if DEBUG then create an array to store resnorm of all iterations
-    global DEBUG_resnormAll
-    DEBUG_resnormAll=[];
-end
-
+function [x,res] = FitModel(s,fa,te,tr,b1,numMagn,userDefine,options,DEBUG)
 % define initial guesses
-% estimate m0 of the first echo
-[~,m0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
+% estimate rho0 of the first echo
+[~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
 % estimate t1 from later echo
 [t10,~] = DESPOT1(abs(s(:,end-3)),fa,tr,'b1',b1);
 
-% in case m0 and t10 estimation go wrong then use defualt values
-if m0<0
-    m0=max(abs(s));
+% in case rho0 and t10 estimation go wrong then use defualt values
+if rho0<0
+    rho0=max(abs(s));
 end
 if t10<0
     t10=1000e-3;
 end
 
-Amy0   = 0.1*m0;       	Amylb   = 0;        Amyub   = 0.2*m0;
-Aax0   = 0.6*m0;      	Aaxlb   = 0;        Aaxub   = 1*m0;
-Aex0   = 0.3*m0;        Aexlb   = 0;        Aexub   = 1*m0;
-t2smy0 = 10e-3;         t2smylb = 3e-3;     t2smyub = 25e-3;
-t2sax0 = 64e-3;         t2saxlb = 25e-3;    t2saxub = 500e-3;
-t2sex0 = 48e-3;         t2sexlb = 25e-3;    t2sexub = 500e-3;
-t1my0  = 200e-3;       	t1mylb  = 150e-3;   t1myub  = 500e-3;
-t1ax0  = t10+0.1;      	t1axlb  = 500e-3;   t1axub  = 1500e-3;
-t1ex0  = t10-0.1;      	t1exlb  = 500e-3;   t1exub  = 1500e-3;
-fmy0   = 5;          	fmylb   = 5-75;     fmyub   = 5+75;
-fax0   = 0;            	faxlb   = -25;      faxub   = +25;
+Amy0   = 0.1*rho0;            Amylb   = 0;        Amyub   = 1*rho0;
+Aax0   = 0.6*rho0;            Aaxlb   = 0;        Aaxub   = 1*rho0;
+Aex0   = 0.3*rho0;            Aexlb   = 0;        Aexub   = 1*rho0;
+t2smy0 = 10e-3;     t2smylb = 3e-3;     t2smyub = 25e-3;
+t2sax0 = 64e-3; 	t2saxlb = 25e-3;    t2saxub = 200e-3;
+t2sex0 = 48e-3; 	t2sexlb = 25e-3;    t2sexub = 200e-3;
+fmy0   = 5;                fmylb   = 5-75;    fmyub   = 5+75;
+fax0   = 0;                 faxlb   = -25;      faxub   = +25;
+t1my0  = 300e-3;  	t1mylb  = 50e-3;    t1myub  = 650e-3;
+t1l0   = t10;     	t1llb  = 500e-3;    t1lub  = 2000e-3;
+kx0 = 2;    kxlb=0;   kxub = 6;
 
 % set initial guess and fitting bounds here
-if isempty(usrDefine.x0)
-    x0 = [Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,t1my0,t1ax0,t1ex0,fmy0,fax0];
+if isempty(userDefine.x0)
+    x0 = [Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,t1my0,t1l0,fmy0,fax0,kx0];
 else
-    x0 = usrDefine.x0;
+    x0 = userDefine.x0;
 end
-if isempty(usrDefine.lb)
-    lb = [Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,t1mylb,t1axlb,t1exlb,fmylb,faxlb];
+if isempty(userDefine.lb)
+    lb = [Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,t1mylb,t1llb,fmylb,faxlb,kxlb];
 else
-    lb = usrDefine.lb;
+    lb = userDefine.lb;
 end
-if isempty(usrDefine.ub)
-    ub = [Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,t1myub,t1axub,t1exub,fmyub,faxub];
+if isempty(userDefine.ub)
+    ub = [Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,t1myub,t1lub,fmyub,faxub,kxub];
 else
-    ub = usrDefine.ub;
+    ub = userDefine.ub;
+end
+
+if DEBUG
+    % if DEBUG then create an array to store resnorm of all iterations
+    global DEBUG_resnormAll
+    DEBUG_resnormAll=[];
+    x0
 end
 
 % run lsqnonlin!
@@ -145,31 +136,31 @@ function err = CostFunc(x,s,fa,te,tr,b1,numMagn,DEBUG)
 % capture all fitting parameters
 Amy=x(1);   Aax=x(2);   Aex=x(3);
 t2smy=x(4); t2sax=x(5); t2sex=x(6);
-t1my=x(7);  t1ax=x(8);  t1ex=x(9);
-fmy=x(10);  fax=x(11);
+t1my=x(7);  t1l=x(8);
+fmy=x(9);  fax=x(10);
+kx=x(11);
 
-% simulate signal based on input parameters
-sHat = mwi_model_3cm_jointT1T2s(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1my,t1ax,t1ex,fmy,fax,b1);
 
-% compute the residual between the simulated signal and measured signal
+% sHat = mwi_model_2cm_jointT1T2s_epgX(fa,te,tr,A0,mwf,t2ss,t2sl,t1s,t1l,fs,0,b1,kx);
+sHat = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1my,t1l,fmy,fax,b1,kx);
+
 err = computeFiter(s,sHat,numMagn);
 
+% error weighted by echo strength
+% w = abs(s(:))./norm(abs(s(:)));
+% err = w.*err;
+
+err = err./norm(abs(s));
 % if DEBUG then plots current fitting result
 if DEBUG
     global DEBUG_resnormAll
-%     w = abs(s(:))/norm(abs(s(:)));
-%         w = ones(size(s));
-%         w(1,4,:) = 100;
-%         w = bsxfun(@times,abs(s),1./vecnorm(abs(s),2,2));
-%         w = w(:)./norm(w(:));
-%     err = err.*w(:);
     figure(99);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))+10]);
     title('Magnitude');
     plot(te(:).',abs(permute(sHat,[2 1])),'x-');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');
     hold off;
-    text(te(1)*1.1,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-    text(te(1)*1.1,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1ax=%f,T1ex=%f',...
-        Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,t1my,t1ax,t1ex));
+    text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+    text(te(1)/3,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1l=%f,kmy=%f',...
+        Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,t1my,t1l,kx));
     for kfa = 1:length(fa)
         text(te(1)/3,abs(s(kfa,1)),['FA ' num2str(fa(kfa))]);
     end
@@ -215,19 +206,19 @@ catch
 end
 % check user bounds and initial guesses
 try
-    algoPara2.usrDefine.x0 = algoPara.usrDefine.x0;
+    algoPara2.userDefine.x0 = algoPara.userDefine.x0;
 catch
-    algoPara2.usrDefine.x0 = [];
+    algoPara2.userDefine.x0 = [];
 end
 try
-    algoPara2.usrDefine.lb = algoPara.usrDefine.lb;
+    algoPara2.userDefine.lb = algoPara.userDefine.lb;
 catch
-    algoPara2.usrDefine.lb = [];
+    algoPara2.userDefine.lb = [];
 end
 try
-    algoPara2.usrDefine.ub = algoPara.usrDefine.ub;
+    algoPara2.userDefine.ub = algoPara.userDefine.ub;
 catch
-    algoPara2.usrDefine.ub = [];
+    algoPara2.userDefine.ub = [];
 end
 
 % check signal mask

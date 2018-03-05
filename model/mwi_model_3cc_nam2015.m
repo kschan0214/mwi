@@ -37,7 +37,7 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 4 January 2018
-% Date last modified: 12 February 2018
+% Date last modified: 27 February 2018
 %
 %
 function s = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini)
@@ -46,8 +46,8 @@ if nargin < 10
     pini=0;
 end
 
-s = (Amy*exp(te*(-1/t2smy+1i*2*pi*fmybg)) + ...
-     Aax*exp(te*(-1/t2sax+1i*2*pi*faxbg)) + ...
-     Aex*exp(te*(-1/t2sex+1i*2*pi*fexbg)))*exp(-1i*pini);
+s = (Amy*exp(te*(-1/t2smy-1i*2*pi*fmybg)) + ...
+     Aax*exp(te*(-1/t2sax-1i*2*pi*faxbg)) + ...
+     Aex*exp(te*(-1/t2sex-1i*2*pi*fexbg)))*exp(-1i*pini);
 
 end

@@ -1,4 +1,4 @@
-%% fitRes = mwi_3cm_jointT1T2s(algoPara,imgPara)
+%% fitRes = mwi_3cm_jointT1T2s_2T1(algoPara,imgPara)
 %
 % Input
 % --------------
@@ -14,7 +14,7 @@
 %
 % Output
 % --------------
-% fitRes.estimates    : estimates,[Amy,Aax,Aex,T2smy,T2sax,T2sex,T1my,T1ax,T1ex,fmy,fax]
+% fitRes.estimates    : estimates,[Amy,Aax,Aex,T2smy,T2sax,T2sex,T1my,T1l,fmy,fax]
 % fitRes.resnorm      : fitting residual norm
 %
 % Description:
@@ -22,10 +22,10 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 19 January 2018
-% Date last modified: 23 february 2018
+% Date last modified: 21 February 2018
 %
 %
-function fitRes = mwi_3cm_jointT1T2s(algoPara,imgPara)
+function fitRes = mwi_3cm_jointT1T2s_2T1(algoPara,imgPara)
 
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
@@ -41,6 +41,7 @@ usrDefine  = algoPara.usrDefine;
 DEBUG      = algoPara.DEBUG;
 % isParallel = algoPara.isParallel;
 
+% capture all images related data
 te    = imgPara.te;
 tr    = imgPara.tr;
 fa    = imgPara.fa;
@@ -54,7 +55,7 @@ b1map = imgPara.b1map;
 numMagn    = length(imgPara.te);
 
 % lsqnonlin setting
-fdss = [1e-4,1e-4,1e-4,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8];
+fdss = [1e-4,1e-4,1e-4,1e-7,1e-7,1e-7,1e-6,1e-6,1e-5,1e-5];
 options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'FiniteDifferenceStepSize',fdss,'MaxFunctionEvaluations',200*11);
 
 % if DEBUG then display fitting message
@@ -62,8 +63,8 @@ if DEBUG
     options.Display = 'off';
 end
 
-% we are fitting 11 parameters with this model
-estimates = zeros(ny,nx,nz,11);
+% we are fitting 10 parameters with this model
+estimates = zeros(ny,nx,nz,10);
 resnorm   = zeros(ny,nx,nz);
 for kz=1:nz
     for ky=1:ny
@@ -86,12 +87,11 @@ end
 
 %% Setup lsqnonlin and fit with the default model
 function [x,res] = FitModel(s,fa,te,tr,b1,numMagn,usrDefine,options,DEBUG)
+% if DEBUG then create an array to store resnorm of all iterations
 if DEBUG
-    % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
 end
-
 % define initial guesses
 % estimate m0 of the first echo
 [~,m0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
@@ -106,31 +106,30 @@ if t10<0
     t10=1000e-3;
 end
 
-Amy0   = 0.1*m0;       	Amylb   = 0;        Amyub   = 0.2*m0;
-Aax0   = 0.6*m0;      	Aaxlb   = 0;        Aaxub   = 1*m0;
-Aex0   = 0.3*m0;        Aexlb   = 0;        Aexub   = 1*m0;
-t2smy0 = 10e-3;         t2smylb = 3e-3;     t2smyub = 25e-3;
-t2sax0 = 64e-3;         t2saxlb = 25e-3;    t2saxub = 500e-3;
-t2sex0 = 48e-3;         t2sexlb = 25e-3;    t2sexub = 500e-3;
-t1my0  = 200e-3;       	t1mylb  = 150e-3;   t1myub  = 500e-3;
-t1ax0  = t10+0.1;      	t1axlb  = 500e-3;   t1axub  = 1500e-3;
-t1ex0  = t10-0.1;      	t1exlb  = 500e-3;   t1exub  = 1500e-3;
-fmy0   = 5;          	fmylb   = 5-75;     fmyub   = 5+75;
-fax0   = 0;            	faxlb   = -25;      faxub   = +25;
+Amy0   = 0.1*m0;	Amylb   = 0;        Amyub   = 0.3*m0;
+Aax0   = 0.6*m0;	Aaxlb   = 0;        Aaxub   = 1*m0;
+Aex0   = 0.3*m0;	Aexlb   = 0;        Aexub   = 1*m0;
+t2smy0 = 10e-3;     t2smylb = 3e-3;     t2smyub = 25e-3;
+t2sax0 = 64e-3; 	t2saxlb = 25e-3;    t2saxub = 500e-3;
+t2sex0 = 48e-3; 	t2sexlb = 25e-3;    t2sexub = 500e-3;
+t1my0  = 200e-3;  	t1mylb  = 50e-3;    t1myub  = 650e-3;
+t1l0   = t10;     	t1llb  = 650e-3;    t1lub  = 2000e-3;
+fmy0   = 5;      	fmylb   = 5-75;     fmyub   = 5+75;
+fax0   = 0;       	faxlb   = -25;      faxub   = 25;
 
 % set initial guess and fitting bounds here
 if isempty(usrDefine.x0)
-    x0 = [Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,t1my0,t1ax0,t1ex0,fmy0,fax0];
+    x0 = [Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,t1my0,t1l0,fmy0,fax0];
 else
     x0 = usrDefine.x0;
 end
 if isempty(usrDefine.lb)
-    lb = [Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,t1mylb,t1axlb,t1exlb,fmylb,faxlb];
+    lb = [Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,t1mylb,t1llb,fmylb,faxlb];
 else
     lb = usrDefine.lb;
 end
 if isempty(usrDefine.ub)
-    ub = [Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,t1myub,t1axub,t1exub,fmyub,faxub];
+    ub = [Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,t1myub,t1lub,fmyub,faxub];
 else
     ub = usrDefine.ub;
 end
@@ -144,12 +143,12 @@ end
 function err = CostFunc(x,s,fa,te,tr,b1,numMagn,DEBUG)
 % capture all fitting parameters
 Amy=x(1);   Aax=x(2);   Aex=x(3);
-t2smy=x(4); t2sax=x(5); t2sex=x(6);
-t1my=x(7);  t1ax=x(8);  t1ex=x(9);
-fmy=x(10);  fax=x(11);
+t2smy=x(4); t2sax=x(5);  t2sex=x(6);
+t1my=x(7);  t1l=x(8);
+fmy=x(9);  fax=x(10);
 
 % simulate signal based on input parameters
-sHat = mwi_model_3cm_jointT1T2s(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1my,t1ax,t1ex,fmy,fax,b1);
+sHat = mwi_model_3cm_jointT1T2s_2T1(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1my,t1l,fmy,fax,b1);
 
 % compute the residual between the simulated signal and measured signal
 err = computeFiter(s,sHat,numMagn);
@@ -168,8 +167,8 @@ if DEBUG
     plot(te(:).',abs(permute(sHat,[2 1])),'x-');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');
     hold off;
     text(te(1)*1.1,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-    text(te(1)*1.1,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1ax=%f,T1ex=%f',...
-        Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,t1my,t1ax,t1ex));
+    text(te(1)*1.1,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1l=%f',...
+        Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,t1my,t1l));
     for kfa = 1:length(fa)
         text(te(1)/3,abs(s(kfa,1)),['FA ' num2str(fa(kfa))]);
     end
@@ -199,6 +198,13 @@ end
 % check if the number of echo times matches with the data
 if length(imgPara.te) ~= size(imgPara.img,4)
     isValid = false;
+end
+
+% check DEBUG
+try
+    algoPara2.DEBUG = algoPara.DEBUG;
+catch
+    algoPara2.DEBUG = false;
 end
 
 % check maximum iterations allowed

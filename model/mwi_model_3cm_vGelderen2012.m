@@ -35,13 +35,13 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 18 January 2018
-% Date last modified: 12 February 2018
+% Date last modified: 22 February 2018
 %
 %
 function s = mwi_model_3cm_vGelderen2012(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax)
 
-s = abs(Amy*exp(te*(-1/t2smy+1i*2*pi*fmy)) + ...
-        Aax*exp(te*(-1/t2sax+1i*2*pi*fax)) + ...
+s = abs(Amy*exp(te*(-1/t2smy-1i*2*pi*fmy)) + ...
+        Aax*exp(te*(-1/t2sax-1i*2*pi*fax)) + ...
         Aex*exp(te*(-1/t2sex)));
 
 end

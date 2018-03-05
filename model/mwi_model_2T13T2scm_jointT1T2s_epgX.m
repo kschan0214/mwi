@@ -11,7 +11,7 @@
 % t2smy         : myelin water T2*
 % t2sax         : axonal water T2*
 % t2sex         : extracellular water T2*
-% t1my          : myelin water T1
+% t1my          : myelin water T1 
 % t1ax          : axonal water T1
 % t1ex          : extracellular water T1
 % fmy           : myelin water frequency - extracellular water
@@ -24,11 +24,12 @@
 %
 % Description: extended magnitude signal model account for the effects
 % of T1w
+% T1,T2* and ka must have the same unit
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 18 January 2018
-% Date last modified:
+% Date last modified: 26 Febryary 2018
 %
 %
 function s = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1s,t1l,fmy,fax,b1,ka)
@@ -47,10 +48,11 @@ end
 phi0 = 50;      % initial RF phase
 nfa=length(fa);
 % npulse = floor(5*t1l/tr);
-npulse = 150;  % signal usually reaches SS quickly(~80), preset the no.of pulses to avoid long computational time
+npulse = 50;  % signal usually reaches SS quickly(~80), preset the no.of pulses to avoid long computational time
 phiCycle = RF_phase_cycle(npulse,phi0);
 t1x = [t1l t1s];
-t2x = [100 20]*1e-3;    
+% t2x = [150 20]*1e-3;    
+t2x = [t2sax,t2smy];
 fx = Amy/(Aax+Aex+Amy);
 fs = (fmy-fax);
 % fx = mwf;
@@ -62,7 +64,7 @@ for ii=1:nfa
    
     % Compute RF spoling phase cycles
     % 2 pools, exchange
-    tmp = EPGX_GRE_BMsplit(AA,phiCycle,tr,t1x,t2x,fx,ka,'delta',fs);
+    tmp = EPGX_GRE_BMsplit(AA,phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10);
     
     % Note: no effect if abs is taken here
     SF(ii,1) = abs(tmp{2}(end));

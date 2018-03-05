@@ -1,20 +1,31 @@
-%% fitRes = mwi_3cm_jointT1T2s(algoPara,imgPara)
+%% fitRes = mwi_3cc_Nam(algoPara,imgPara)
 %
 % Input
 % --------------
+% algoPara.maxIter : maximum iteration allows (default 500)
+% algoPara.isROI   : boolean ROI analysis (default false)
+% algoPara.DEBUG   : debug mode (default false)
+% algoPara.fcnTol  : function tolerance (default: 5 orders small than max. signal)
+% imgPara.img      : 4D image data, time in 4th dimension
+% imgPara.mask     : signal mask
+% imgPara.te       : echo times
+% imgPara.fieldmap : background field
 %
 % Output
 % --------------
+% fitRes.estimates : fitting estimates (Ampl_n,t2s_n,freq_n)
+% fitres.resnorm   : L2 norm of fitting residual
 %
-% Description:
+% Description: Myelin water mapping by fitting complex mode(c) with
+% complex-valued data(c) (ref. Model 3 in Nam et al. 2015 NeuroImage)
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 19 January 2018
-% Date last modified:
+% Date last modified: 27 February 2018
 %
 %
-function fitRes = mwi_3cm_Nam(algoPara,imgPara)
+function fitRes = mwi_3cc_Nam(algoPara,imgPara)
 
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
@@ -24,11 +35,15 @@ if ~isValid
     return
 end
 
-DEBUG = algoPara.DEBUG;
+DEBUG   = algoPara.DEBUG;
+verbose = algoPara.verbose;
 
 % capture all parameters
 numMagn    = 0;
 maxIter    = algoPara.maxIter;
+fcnTol     = algoPara.fcnTol;
+isWeighted = algoPara.isWeighted;
+% isROI      = algoPara.isROI; 
 % isParallel = algoPara.isParallel;
 
 te    = imgPara.te;
@@ -36,16 +51,33 @@ data  = imgPara.img;
 mask  = imgPara.mask;
 fm    = imgPara.fieldmap;
 
+% for complex fitting we have doubled the elements in the cost function
+fcnTol = fcnTol./(2*numel(te));
+
+% display fitting message
+if verbose
+    disp('The following fitting parameters are used:');
+    fprintf('# max. iteration=%i\n',maxIter);
+    fprintf('Function tolerance=%e\n',fcnTol);
+    if isWeighted
+        disp('Cost function is weighted by echo intensity');
+    else
+        disp('No weight on cost function');
+    end
+end
+
 [ny,nx,nz,~,~] = size(data);
 
-if DEBUG
-%     fdss = [1e-2,1e-2,1e-3,1e-7,1e-7,1e-7,1e-6,1e-6,1e-6,1e-5,1e-5];
-%     fdss = [1e-4,1e-3,1e-3,1e-7,1e-7,1e-7,1e-4,1e-4,1e-4,1e-4];
-    fdss = [1e-4,1e-7,1e-4,1e-3,1e-7,1e-4,1e-3,1e-7,1e-4,1e-4];
-    options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'FiniteDifferenceStepSize',fdss,'MaxFunctionEvaluations',200*15,...
-        'StepTolerance',1e-6,'FunctionTolerance',1e-6);
-else
-    options = optimoptions(@lsqnonlin,'Display','off','MaxIter',maxIter);
+% get the order of magnitude of signal
+orderS = floor(log10(max(abs(data(:)))));
+
+options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*15,...
+    'StepTolerance',1e-6,'FunctionTolerance',fcnTol);
+
+% fdss = [10^(orderS-6),10^(orderS-6),10^(orderS-6),1e-8,1e-8,1e-8,1e-8,1e-8,1e-8],1e-8]];
+% options.FiniteDifferenceStepSize = fdss;
+if ~DEBUG
+    options.Display = 'off';
 end
 
 estimates = zeros(ny,nx,nz,10);
@@ -57,7 +89,7 @@ for kz=1:nz
                 % T2*w
                 s = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                 db0 = fm(ky,kx,kz);
-                [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,options,DEBUG);
+                [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,isWeighted,options,DEBUG);
             end
         end
     end
@@ -69,17 +101,20 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,te,db0,numMagn,options,DEBUG)
-[~,~,s0]=R2starmapping_trapezoidal_voxel(abs(s),te);
-Amy0   = 0.1*abs(s0);            Amylb   = 0;        Amyub   = 0.3*abs(s0);
-Aax0   = 0.6*abs(s0);            Aaxlb   = 0;        Aaxub   = 1*abs(s0);
-Aex0   = 0.3*abs(s0);            Aexlb   = 0;        Aexub   = 1*abs(s0);
-% Amy0   = 0.15*abs(s(1));            Amylb   = 0;        Amyub   = 0.3*abs(s(1));
-% Aax0   = 0.6*abs(s(1));            Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
-% Aex0   = 0.3*abs(s(1));            Aexlb   = 0;        Aexub   = 1*abs(s(1));
-t2smy0 = 10e-3;                    t2smylb = 3e-3;     t2smyub = 24e-3;
-t2sax0 = 64e-3;               t2saxlb = 24e-3;    t2saxub = 350e-3;
-t2sex0 = 48e-3;               t2sexlb = 24e-3;    t2sexub = 350e-3;
+function [x,res] = FitModel(s,te,db0,numMagn,isWeighted,options,DEBUG)
+if DEBUG
+    % if DEBUG then create an array to store resnorm of all iterations
+    global DEBUG_resnormAll
+    DEBUG_resnormAll=[];
+end
+
+% [~,~,s0]=R2starmapping_trapezoidal_voxel(abs(s),te);
+Amy0   = 0.1*abs(s(1));            Amylb   = 0;        Amyub   = 1*abs(s(1));
+Aax0   = 0.6*abs(s(1));            Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
+Aex0   = 0.3*abs(s(1));            Aexlb   = 0;        Aexub   = 1*abs(s(1));
+t2smy0 = 10e-3;                    t2smylb = 3e-3;     t2smyub = 25e-3;
+t2sax0 = 64e-3;               t2saxlb = 25e-3;    t2saxub = 350e-3;
+t2sex0 = 48e-3;               t2sexlb = 25e-3;    t2sexub = 350e-3;
 fmy0   = db0;                 fmylb   = db0-75;    fmyub   = db0+75;
 fax0   = db0;                 faxlb   = db0-25;      faxub   = db0+25;
 fex0   = db0;                 fexlb   = db0-25;      fexub   = db0+25;
@@ -89,34 +124,38 @@ pini0   = 2*pi*db0*te(1)-angle(s(1));        pinilb = -pi;         piniub=pi;
 x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0,fex0,pini0]);
 lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb,fexlb,pinilb]);
 ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub,fexub,piniub]);
-% x0 = double([Amy0,t2smy0,fmy0,Aex0,t2sex0,fex0,Aax0,t2sax0,fax0,pini0]);
-% lb = double([Amylb,t2smylb,fmylb,Aexlb,t2sexlb,fexlb,Aaxlb,t2saxlb,faxlb,pinilb]);
-% ub = double([Amyub,t2smyub,fmyub,Aexub,t2sexub,fexub,Aaxub,t2saxub,faxub,piniub]);
 
-
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,te,numMagn,DEBUG)
+function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
+% obatin fitting parameters
 Amy=x(1);   Aax=x(2);   Aex=x(3);
 t2smy=x(4); t2sax=x(5); t2sex=x(6);
 fmybg=x(7);  faxbg=x(8);    fexbg=x(9);
 pini=x(10);
-% Amy=x(1);   Aax=x(7);   Aex=x(4);
-% t2smy=x(2); t2sax=x(8); t2sex=x(5);
-% fmybg=x(3);  faxbg=x(9);    fexbg=x(6);
-% pini=x(10);
 
+% simulate signal based on parameter input
 sHat = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini);
 
-err = computeFiter(s,sHat,numMagn);
+% compute fitting residual
+if isWeighted
+    % weighted the cost function by echo intensity, as suggested in Nam's paper
+    w = abs(s(:))/norm(abs(s(:)));
+    err = computeFiter(s,sHat,numMagn,w);
+%     w = abs(s(:));
+%     err = err.*w(:);
+else
+    err = computeFiter(s,sHat,numMagn);
+end
+
+% cost function is normalised with the norm of signal in order to provide
+% sort of consistence with fixed function tolerance
+err = err ./ norm(abs(s(:)));
 
 if DEBUG
-%     % weighted by signal magnitude
-%     w = abs(s(:))/norm(abs(s(:)));
-%     err = err.*repmat(w(:),2,1);
     figure(99);subplot(411);plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;ylim([min(real(s(:)))-10,max(real(s(:)))+10]);
     title('Real part');
     subplot(412);plot(te(:).',imag(permute(s,[2 1])),'k^-');hold on;ylim([min(imag(s(:)))-10,max(imag(s(:)))+10]);
@@ -159,6 +198,12 @@ try
 catch
     algoPara2.DEBUG = false;
 end
+% check verbose
+try
+    algoPara2.verbose = algoPara.verbose;
+catch
+    algoPara2.verbose = true;
+end
 
 % check maximum iterations allowed
 try
@@ -171,6 +216,28 @@ try
     algoPara2.isParallel = algoPara.isParallel;
 catch
     algoPara2.isParallel = false;
+end
+% check function tolerance
+try
+    algoPara2.fcnTol = algoPara.fcnTol;
+catch
+    % get the order of magnitude of signal
+%     orderS = floor(log10(max(abs(imgPara2.img(:)))));
+%     algoPara2.fcnTol = 10^(orderS-5);
+    algoPara2.fcnTol = 1e-5;
+end
+% check weighted sum of cost function
+try
+    algoPara2.isWeighted = algoPara.isWeighted;
+catch
+    algoPara2.isWeighted = true;
+end
+
+% check ROI analysis
+try
+    algoPara2.isROI = algoPara.isROI;
+catch
+    algoPara2.isROI = false;
 end
 
 % check signal mask
