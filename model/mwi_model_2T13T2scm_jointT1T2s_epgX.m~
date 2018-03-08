@@ -32,7 +32,7 @@
 % Date last modified: 26 Febryary 2018
 %
 %
-function s = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1s,t1l,fmy,fax,b1,ka,npulse,T3D_all)
+function s = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1s,t1l,fmy,fax,b1,ka)
 % function s = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,A0,mwf,t2ss,t2sl,t1s,t1l,fs,fl,b1,ka)
 
 if nargin < 12
@@ -48,9 +48,9 @@ end
 phi0 = 50;      % initial RF phase
 nfa=length(fa);
 % npulse = floor(5*t1l/tr);
-% npulse = 100;  
+npulse = 100;  
 % npulse = 70;
-% npulse = npulse; 
+npulse = 40; 
 phiCycle = RF_phase_cycle(npulse,phi0);
 t1x = [t1l t1s];
 % t2x = [150 20]*1e-3;    
@@ -63,7 +63,7 @@ fs = (fmy-fax);
 SF = zeros(nfa,2);
 for ii=1:nfa
     alpha = fa(ii)*b1;
-
+    AA = d2r(alpha)*ones(npulse,1);
    
     % Compute RF spoling phase cycles
     % 2 pools, exchange
@@ -73,10 +73,7 @@ for ii=1:nfa
     % start with steady-state signals
     z1 = Signal_GRE_T1wMono((1-fx), alpha, t1x(1), tr)/sind(alpha);
     z2 = Signal_GRE_T1wMono(fx, alpha, t1x(2), tr)/sind(alpha);
-%         AA = d2r(alpha)*ones(npulse,1);
-%     tmp = EPGX_GRE_BMsplit(AA,phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
-    
-    tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
+    tmp = EPGX_GRE_BMsplit(AA,phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
     
 %     figure(10+ii);plot(abs(abs(tmp{1})-abs(tmp{1}(end))));
 %     hold on;plot(abs(abs(tmp2{1})-abs(tmp2{1}(end))));

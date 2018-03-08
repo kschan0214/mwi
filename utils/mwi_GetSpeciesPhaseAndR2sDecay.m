@@ -10,7 +10,7 @@
 % --------------
 % B             : mxn matrix with the phase and signal decay across time
 %
-% Description:
+% Description: Formula matches Nam et al. NeuroImage 2015
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
@@ -18,7 +18,7 @@
 % Date last modified:
 %
 %
-function B = mwi_GetSpeciesPhaseAndR2Decay(t,freqs,r2s)
+function B = mwi_GetSpeciesPhaseAndR2sDecay(t,freqs,r2s)
 
 % separated species phase and decay
 B = exp(t(:)*(-r2s(:)-1i*2*pi*freqs(:)).');

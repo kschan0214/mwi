@@ -6,6 +6,7 @@
 % algoPara.isROI   : boolean ROI analysis (default false)
 % algoPara.DEBUG   : debug mode (default false)
 % algoPara.fcnTol  : function tolerance (default: 1e-5)
+% algoPara.isWeighted : boolean cost function weighted by echo intensity (default: True)
 % imgPara.img      : 4D image data, time in 4th dimension
 % imgPara.mask     : signal mask
 % imgPara.te       : echo times
@@ -26,6 +27,7 @@
 %
 %
 function fitRes = mwi_3cx_T2s(algoPara,imgPara)
+disp('Myelin water imaing: MET2* model');
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
 if ~isValid
@@ -59,7 +61,10 @@ fm    = imgPara.fieldmap;
 
 % for complex fitting we doubled the elements in the cost function
 % fcnTol = fcnTol./(2*numel(te)-numMagn);
-fcnTol = fcnTol./(numel(te));
+% fcnTol = fcnTol./(numel(te));
+if numMagn~=numel(te)
+    fcnTol = fcnTol*10;
+end
 
 % display fitting message
 if verbose
@@ -119,6 +124,9 @@ end
 resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
+        if verbose
+            fprintf('Processing slice %i\n',kz);
+        end
         for ky=1:ny
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -132,6 +140,9 @@ if isParallel
     end
 else
     for kz=1:nz
+        if verbose
+            fprintf('Processing slice %i\n',kz);
+        end
         for ky=1:ny
             for kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -235,6 +246,11 @@ end
 % sort of consistence with fixed function tolerance
 err = err ./ norm(abs(s(:)));
 
+%%%%%%% TEST 20180307 %%%%%%%%
+% if numMagn==0
+%     err = err/2;
+% end
+
 % Debug module
 if DEBUG
     global DEBUG_resnormAll
@@ -329,7 +345,7 @@ end
 try
     algoPara2.fcnTol = algoPara.fcnTol;
 catch
-    algoPara2.fcnTol = 1e-5;
+    algoPara2.fcnTol = 1e-6;
 end
 % check weighted sum of cost function
 try
@@ -370,18 +386,18 @@ end
 % check signal mask
 try
     imgPara2.mask = imgPara.mask;
-    disp('Default mask: False');
+    disp('Mask input: True');
 catch
     imgPara2.mask = max(max(abs(imgPara.img),[],4),[],5)./max(abs(imgPara.img(:))) > 0.05;
-    disp('Default mask: True');
+    disp('Mask input: false');
 end
 % check field map
 try
     imgPara2.fieldmap = imgPara.fieldmap;
-    disp('Default field map: False');
+    disp('Field map input: True');
 catch
     imgPara2.fieldmap = zeros(size(imgPara2.mask));
-    disp('Default field map: True');
+    disp('Field map input: False');
 end
 
 end
