@@ -47,7 +47,7 @@ fcnTol     = algoPara.fcnTol;
 isWeighted = algoPara.isWeighted;
 userDefine = algoPara.userDefine;
 npulse = algoPara.npulse;
-% isParallel = algoPara.isParallel;
+isParallel = algoPara.isParallel;
 
 % % if DEBUG on disables parallel computing
 % if DEBUG
@@ -70,6 +70,7 @@ if verbose
     disp('The following fitting parameters are used:');
     fprintf('Max. iterations = %i\n',maxIter);
     fprintf('Function tolerance = %e\n',fcnTol);
+    fprintf('No. of pulses for EPG-X = %i\n',npulse);
     if isWeighted
         disp('Cost function weighted by echo intensity: True');
     else
@@ -118,21 +119,36 @@ end
 % we are fitting 11 parameters with this model
 estimates = zeros(ny,nx,nz,11);
 resnorm   = zeros(ny,nx,nz);
-for kz=1:nz
-    if verbose
-        fprintf('Processing slice %i\n',kz);
-    end
-    for ky=1:ny
-        for kx=1:nx
-            if mask(ky,kx,kz)>0
-                % 1st dim: T1w; 2nd dim: T2*w
-                s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
-                b1 = b1map(ky,kx,kz);
-                [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,userDefine,options,DEBUG);
+if isParallel
+    for kz=1:nz
+        if verbose
+            fprintf('Processing slice %i\n',kz);
+        end
+        for ky=1:ny
+            parfor kx=1:nx
+                if mask(ky,kx,kz)>0
+                    % 1st dim: T1w; 2nd dim: T2*w
+                    s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
+                    b1 = b1map(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,userDefine,options,DEBUG);
+                end
             end
         end
-        if ky==round(ny)/2
-            save('halfwayResult','estimates','resnorm');
+    end
+else
+    for kz=1:nz
+        if verbose
+            fprintf('Processing slice %i\n',kz);
+        end
+        for ky=1:ny
+            for kx=1:nx
+                if mask(ky,kx,kz)>0
+                    % 1st dim: T1w; 2nd dim: T2*w
+                    s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
+                    b1 = b1map(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,userDefine,options,DEBUG);
+                end
+            end
         end
     end
 end
