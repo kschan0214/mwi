@@ -172,7 +172,7 @@ end
 Amy0   = 0.1*abs(s(1));     Amylb   = 0;        Amyub   = 1*abs(s(1));
 Aax0   = 0.6*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
 Aex0   = 0.3*abs(s(1));    	Aexlb   = 0;        Aexub   = 1*abs(s(1));
-t2smy0 = 10e-3;            	t2smylb = 3e-3;     t2smyub = 25e-3;
+t2smy0 = 10e-3;            	t2smylb = 1e-3;     t2smyub = 25e-3;
 t2sax0 = 64e-3;           	t2saxlb = 25e-3;    t2saxub = 150e-3;
 t2sex0 = 48e-3;           	t2sexlb = 25e-3;    t2sexub = 150e-3;
 

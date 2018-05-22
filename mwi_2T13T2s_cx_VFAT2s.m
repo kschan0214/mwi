@@ -1,16 +1,26 @@
-%% fitRes = mwi_2T13T2s_cm_VFAT2s(algoPara,imgPara)
+%% fitRes = mwi_2T13T2s_cx_VFAT2s(algoPara,imgPara)
 %
 % Input
 % --------------
-% algoPara.maxIter : maximum iteration allows (default 500)
-% algoPara.DEBUG   : debug mode (default false)
-% algoPara.fcnTol  : function tolerance (default: 1e-5)
-% algoPara.isWeighted : boolean cost function weighted by echo intensity (default: True)
-% imgPara.img      : 5D image data, time in 4th dimension, T1w in 5th dim
-% imgPara.mask     : signal mask
-% imgPara.te       : echo times
-% imgPara.fa       : flip angles
-% imgPara.b1map    : B1 map
+% algoPara.maxIter      : maximum iteration allows (default: 500)
+% algoPara.fcnTol       : function tolerance (default: 1e-5)
+% algoPara.isWeighted   : boolean cost function weighted by echo intensity (default: false)
+% algoPara.weightMethod : if algoPara.isWeighted = true, then you may
+%                         choose the weighting method (default: 'norm')(other: '1stEcho')
+% algoPara.npulse       : no. of pulses to reach steady-state for EPG-X (default: 50)
+% algoPara.numMagn      : no. of phase corrupted echoes (default: length(te))
+%                         This will alter the type of fitting being used (magnitude/mixed/complex)
+% algoPara.userDefine   : user defined x0,lb and ub (default: [])
+% algoPara.isParallel   : parallel computing using parfor (default: false)
+% algoPara.DEBUG        : debug mode (default: false)
+% algoPara.verbose      : display feedback about the fitting (default: true)
+%
+% imgPara.img           : 5D image data, time in 4th dimension, T1w in 5th dim
+% imgPara.mask          : signal mask
+% imgPara.te            : echo times
+% imgPara.fa            : flip angles
+% imgPara.b1map         : B1 map
+% imgPara.fieldmap      : field map
 %
 % Output
 % --------------
@@ -26,8 +36,8 @@
 % Date last modified: 08 march 2018 
 %
 %
-function fitRes = mwi_2T13T2s_cm_VFAT2s(algoPara,imgPara)
-disp('Myelin water imaing: VFA-ME-T2* model');
+function fitRes = mwi_2T13T2s_cx_VFAT2s(algoPara,imgPara)
+disp('Myelin water imaing: VFA-T2* model');
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
 if ~isValid
@@ -41,24 +51,25 @@ DEBUG   = algoPara.DEBUG;
 verbose = algoPara.verbose;
 
 % capture all fitting settings
-maxIter    = algoPara.maxIter;
-fcnTol     = algoPara.fcnTol;
-% numMagn    = algoPara.numMagn;
-isWeighted = algoPara.isWeighted;
+npulse       = algoPara.npulse;
+maxIter      = algoPara.maxIter;
+fcnTol       = algoPara.fcnTol;
+numMagn      = algoPara.numMagn;
+isWeighted   = algoPara.isWeighted;
 weightMethod = algoPara.weightMethod;
-userDefine = algoPara.userDefine;
-npulse = algoPara.npulse;
-isParallel = algoPara.isParallel;
+userDefine   = algoPara.userDefine;
+isParallel   = algoPara.isParallel;
 
+% check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
     disp('Do not support the input weighting method');
     weightMethod = 'norm';
 end
 
-% % if DEBUG on disables parallel computing
-% if DEBUG
-%     isParallel = false;
-% end
+% if DEBUG on then disables parallel computing
+if DEBUG
+    isParallel = false;
+end
 
 % capture all images related data
 te    = imgPara.te;
@@ -67,9 +78,13 @@ fa    = imgPara.fa;
 data  = imgPara.img;
 mask  = imgPara.mask;
 b1map = imgPara.b1map;
+fm    = imgPara.fieldmap;
 
-% Magnitude fitting
-numMagn    = length(imgPara.te);
+%
+if isreal(data) && numMagn~=length(te)
+    numMagn = length(te);
+    disp('Input data is real, switch to magnitude data fitting');
+end
 
 % display fitting message
 if verbose
@@ -78,10 +93,10 @@ if verbose
     fprintf('Function tolerance = %e\n',fcnTol);
     fprintf('No. of pulses for EPG-X = %i\n',npulse);
     if isWeighted
-        disp('Weighted Cost function: True');
+        disp('Weighted cost function: True');
         disp(['Weighting method: ' weightMethod]);
     else
-        disp('Weighted Cost function: False');
+        disp('Weighted cost function: False');
     end
     % type of fitting
     if numMagn==0
@@ -123,8 +138,12 @@ if ~DEBUG
     options.Display = 'off';
 end
 
-% we are fitting 11 parameters with this model
-estimates = zeros(ny,nx,nz,11);
+if numMagn==numel(te)   % magnitude fitting has 11 estimates
+    estimates = zeros(ny,nx,nz,11);
+else
+    estimates = zeros(ny,nx,nz,12); % others have 12 estimates
+end
+
 resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
@@ -137,7 +156,8 @@ if isParallel
                     % 1st dim: T1w; 2nd dim: T2*w
                     s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                     b1 = b1map(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
+                    db0 = fm(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
                 end
             end
         end
@@ -153,7 +173,8 @@ else
                     % 1st dim: T1w; 2nd dim: T2*w
                     s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                     b1 = b1map(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
+                    db0 = fm(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
                 end
             end
         end
@@ -166,55 +187,74 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,fa,te,tr,b1,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG)
+function [x,res] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG)
 % define initial guesses
 % estimate rho0 of the first echo
 [~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
 % estimate t1 from later echo
 [t10,~] = DESPOT1(abs(s(:,end-3)),fa,tr,'b1',b1);
 
-% in case rho0 and t10 estimation go wrong then use defualt values
+% in case rho0 and t10 go wrong then use defualt values
 if rho0<0
-    rho0=max(abs(s));
+    rho0=max(abs(s(:)));
 end
-if t10<0
+if t10<0 || t10>2000e-3
     t10=1000e-3;
 end
 
-Amy0   = 0.1*rho0;            Amylb   = 0;        Amyub   = 1*rho0;
-Aax0   = 0.6*rho0;            Aaxlb   = 0;        Aaxub   = 1*rho0;
-Aex0   = 0.3*rho0;            Aexlb   = 0;        Aexub   = 1*rho0;
-t2smy0 = 10e-3;     t2smylb = 1e-3;     t2smyub = 25e-3;
-t2sax0 = 64e-3; 	t2saxlb = 25e-3;    t2saxub = 200e-3;
-t2sex0 = 48e-3; 	t2sexlb = 25e-3;    t2sexub = 200e-3;
-fmy0   = 5;                fmylb   = 5-75;    fmyub   = 5+75;
-fax0   = 0;                 faxlb   = -25;      faxub   = +25;
-t1my0  = 300e-3;  	t1mylb  = 50e-3;    t1myub  = 650e-3;
-t1l0   = t10;     	t1llb  = 500e-3;    t1lub  = 2000e-3;
-kx0 = 2;    kxlb=0;   kxub = 6;
+% common initial guesses
+Amw0   = 0.1*rho0; 	Amwlb   = 0;        Amwub   = 1*rho0;
+Aiw0   = 0.6*rho0; 	Aiwlb   = 0;        Aiwub   = 1*rho0;
+Aew0   = 0.3*rho0; 	Aewlb   = 0;        Aewub   = 1*rho0;
+t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 25e-3;
+t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 200e-3;
+t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 200e-3;
+t1s0   = 300e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
+t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 2000e-3;
+kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+
+if numMagn==numel(te) % magnitude fitting
+    fmw0   = 5;   	fmwlb   = 5-75;  	fmwub   = 5+75;
+    fiw0   = 0;    	fiwlb   = -25;      fiwub   = +25;
+    
+    % set initial guess and fitting boundaries
+    x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0 ,kls0]);
+    lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb,klslb]);
+    ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,t1sub,t1lub,fmwub,fiwub,klsub]);
+else    % other fittings
+    fmw0   = db0;  	fmwlb   = db0-75; 	fmwub   = db0+75;
+    fiw0   = db0;  	fiwlb   = db0-25;  	fiwub   = db0+25;
+    few0   = db0;  	fewlb   = db0-25;  	fewub   = db0+25;
+%     pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -pi;         piniub=pi;
+    
+    % set initial guess and fitting boundaries
+    x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0 ,few0 ,kls0]);
+    lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb,fewlb,klslb]);
+    ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,t1sub,t1lub,fiwub,fewub,klsub]);
+end
 
 % set initial guess and fitting bounds here
-x0 = [Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,t1my0,t1l0,fmy0,fax0,kx0];
-lb = [Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,t1mylb,t1llb,fmylb,faxlb,kxlb];
-ub = [Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,t1myub,t1lub,fmyub,faxub,kxub];
-
 if ~isempty(userDefine.x0)
+%     x0 = userDefine.x0;
     x0(~isnan(userDefine.x0)) = userDefine.x0(~isnan(userDefine.x0));
 end
 if ~isempty(userDefine.lb)
+%     lb = userDefine.lb;
     lb(~isnan(userDefine.lb)) = userDefine.lb(~isnan(userDefine.lb));
 end
 if ~isempty(userDefine.ub)
+%     ub = userDefine.ub;
     ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
 end
 
+% if DEBUG then create an array to store resnorm of all iterations
 if DEBUG
-    % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
     x0
 end
 
+% precompute EPG-X's transition matrix here for speed
 phiCycle = RF_phase_cycle(npulse,50);
 for kfa=1:length(fa)
 T3D_all{kfa} = PrecomputeT(phiCycle,d2r(fa(kfa)*b1));
@@ -228,37 +268,45 @@ end
 %% compute the cost function of the optimisation problem
 function err = CostFunc(x,s,fa,te,tr,b1,npulse,T3D_all,numMagn,isWeighted,weightMethod,DEBUG)
 % capture all fitting parameters
-Amy=x(1);   Aax=x(2);   Aex=x(3);
-t2smy=x(4); t2sax=x(5); t2sex=x(6);
-t1my=x(7);  t1l=x(8);
-fmy=x(9);  fax=x(10);
-kx=x(11);
+Amw=x(1);   Aiw=x(2);   Aew=x(3);
+t2smw=x(4); t2siw=x(5); t2sew=x(6);
+t1s=x(7);   t1l=x(8);
+fmw=x(9);   fiw=x(10);  
+if numMagn==numel(te) % magnitude fitting
+    few = 0;        kls=x(11);      
+else    % other fittings
+    few=x(11);      kls=x(12);
+end
 
+% initial phase assumed to be removed already
+pini=0;
 
-% sHat = mwi_model_2cm_jointT1T2s_epgX(fa,te,tr,A0,mwf,t2ss,t2sl,t1s,t1l,fs,0,b1,kx);
-sHat = mwi_model_2T13T2scm_jointT1T2s_epgX(fa,te,tr,Amy,Aax,Aex,t2smy,t2sax,t2sex,t1my,t1l,fmy,fax,b1,kx,npulse,T3D_all);
+% simulate signal based on parameter input
+sHat = mwi_model_2T13T2scc_epgx(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,pini,b1,kls,npulse,T3D_all);
 
-% err = computeFiter(s,sHat,numMagn);
 % compute fitting residual
 if isWeighted
     switch weightMethod
         case 'norm'
-            % weighted the cost function by echo intensity, as suggested in Nam's paper
-            w = abs(s(:))/norm(abs(s(:)));
+            % weights using echo intensity, as suggested in Nam's paper
+%             w = abs(s(:))/norm(abs(s(:)));
+            % in this way the sum of all weights is the same as no
+            % weighting (which is sum(ones(size(s(:)))).)
+            w = numel(s) * abs(s(:))/sum(abs(s(:)));
         case '1stEcho'
+            % weights using the 1st echo intensity of each flip angle
             w = bsxfun(@rdivide,abs(s),abs(s(:,1)));
+            w = numel(s) * w(:)/sum(w(:));
     end
+    % compute the cost with weights
     err = computeFiter(s,sHat,numMagn,w);
-%     w = abs(s(:));
-%     err = err.*w(:);
 else
+    % compute the cost without weights
     err = computeFiter(s,sHat,numMagn);
 end
 
-% error weighted by echo strength
-% w = abs(s(:))./norm(abs(s(:)));
-% err = w.*err;
-
+% residual normalied by measured signal
+% 20180316 TODO:maybe for weighted cost there should be another way to do this 
 err = err./norm(abs(s));
 
 % if DEBUG then plots current fitting result
@@ -270,7 +318,7 @@ if DEBUG
     hold off;
     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
     text(te(1)/3,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1l=%f,kmy=%f',...
-        Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,t1my,t1l,kx));
+        Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmw,fiw,t1s,t1l,kls));
     for kfa = 1:length(fa)
         text(te(1)/3,abs(s(kfa,1)),['FA ' num2str(fa(kfa))]);
     end
@@ -288,16 +336,16 @@ end
 
 %% check and set default
 function [algoPara2,imgPara2,isValid]=CheckAndSetPara(algoPara,imgPara)
-
+% copy input to output
 imgPara2 = imgPara;
 algoPara2 = algoPara;
 isValid = true;
 
-% check if the number of flip angles matches with the data
+% check if the number of flip angles matches with the data's 5th dim
 if length(imgPara.fa) ~= size(imgPara.img,5)
     isValid = false;
 end
-% check if the number of echo times matches with the data
+% check if the number of echo times matches with the data's 4th dim
 if length(imgPara.te) ~= size(imgPara.img,4)
     isValid = false;
 end
@@ -335,15 +383,15 @@ catch
 end
 % check weighted sum of cost function
 try
-    algoPara2.isWeighted = algoPara.isWeighted;
-catch
-    algoPara2.isWeighted = true;
-end
-% check weighted sum of cost function
-try
     algoPara2.weightMethod = algoPara.weightMethod;
 catch
     algoPara2.weightMethod = 'norm';
+end
+% check method for weighting
+try
+    algoPara2.isWeighted = algoPara.isWeighted;
+catch
+    algoPara2.isWeighted = false;
 end
 % check # of phase-corrupted echoes
 try
@@ -376,7 +424,6 @@ catch
     imgPara2.mask = max(max(abs(imgPara.img),[],4),[],5)./max(abs(imgPara.img(:))) > 0.05;
     disp('Mask input: false');
 end
-
 % check b1 map
 try
     imgPara2.b1map = imgPara.b1map;
@@ -384,6 +431,14 @@ try
 catch
     imgPara2.b1map = ones(size(imgPara.img,1),size(imgPara.img,2),size(imgPara.img,3));
     disp('B1 input: False');
+end
+% check field map
+try
+    imgPara2.fieldmap = imgPara.fieldmap;
+    disp('Field map input: True');
+catch
+    imgPara2.fieldmap = zeros(size(imgPara2.mask));
+    disp('Field map input: False');
 end
 
 end
