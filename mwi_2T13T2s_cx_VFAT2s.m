@@ -59,6 +59,7 @@ isWeighted   = algoPara.isWeighted;
 weightMethod = algoPara.weightMethod;
 userDefine   = algoPara.userDefine;
 isParallel   = algoPara.isParallel;
+isInvivo   = algoPara.isInvivo;
 
 % check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
@@ -97,6 +98,11 @@ if verbose
         disp(['Weighting method: ' weightMethod]);
     else
         disp('Weighted cost function: False');
+    end
+    if isInvivo
+        disp('Initial guesses for in vivo study');
+    else
+        disp('Initial guesses for ex vivo study');
     end
     % type of fitting
     if numMagn==0
@@ -157,7 +163,7 @@ if isParallel
                     s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                     b1 = b1map(ky,kx,kz);
                     db0 = fm(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
                 end
             end
         end
@@ -174,7 +180,7 @@ else
                     s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                     b1 = b1map(ky,kx,kz);
                     db0 = fm(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
                 end
             end
         end
@@ -187,7 +193,7 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,userDefine,options,DEBUG)
+function [x,res] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG)
 % define initial guesses
 % estimate rho0 of the first echo
 [~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
@@ -202,6 +208,7 @@ if t10<0 || t10>2000e-3
     t10=1000e-3;
 end
 
+if isInvivo
 % common initial guesses
 Amw0   = 0.1*rho0; 	Amwlb   = 0;        Amwub   = 1*rho0;
 Aiw0   = 0.6*rho0; 	Aiwlb   = 0;        Aiwub   = 1*rho0;
@@ -212,6 +219,21 @@ t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 200e-3;
 t1s0   = 300e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
 t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 2000e-3;
 kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+
+else
+    
+    Amw0   = 0.15*rho0; 	Amwlb   = 0;        Amwub   = 1*rho0;
+    Aiw0   = 0.6*rho0;      Aiwlb   = 0;        Aiwub   = 1*rho0;
+    Aew0   = 0.25*rho0; 	Aewlb   = 0;        Aewub   = 1*rho0;
+    t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 20e-3;
+    t2siw0 = 54e-3; 	t2siwlb = 20e-3;    t2siwub = 200e-3;
+    t2sew0 = 38e-3; 	t2sewlb = 20e-3;    t2sewub = 200e-3;
+    t1s0   = 200e-3;  	t1slb   = 50e-3;  	t1sub   = 450e-3;
+    t1l0   = t10;     	t1llb   = 400e-3; 	t1lub   = 2000e-3;
+    kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+    
+end
+
 
 if numMagn==numel(te) % magnitude fitting
     fmw0   = 5;   	fmwlb   = 5-75;  	fmwub   = 5+75;
@@ -232,6 +254,7 @@ else    % other fittings
     lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb,fewlb,klslb]);
     ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,t1sub,t1lub,fiwub,fewub,klsub]);
 end
+
 
 % set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
@@ -439,6 +462,15 @@ try
 catch
     imgPara2.fieldmap = zeros(size(imgPara2.mask));
     disp('Field map input: False');
+end
+
+% check initial guesses
+try
+    imgPara2.isInvivo = imgPara.isInvivo;
+%     disp('Field map input: True');
+catch
+    imgPara2.isInvivo = true;
+%     disp('Field map input: False');
 end
 
 end
