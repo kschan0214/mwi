@@ -27,7 +27,7 @@
 %
 %
 function fitRes = mwi_3cx_T2s(algoPara,imgPara)
-disp('Myelin water imaing: MET2* model');
+disp('Myelin water imaing: ME-T2* model');
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
 if ~isValid
@@ -40,16 +40,17 @@ end
 DEBUG   = algoPara.DEBUG;
 verbose = algoPara.verbose;
 
-% capture all parameters
+% capture all algorithm parameters
 numMagn    = algoPara.numMagn;
 maxIter    = algoPara.maxIter;
 fcnTol     = algoPara.fcnTol;
 isWeighted = algoPara.isWeighted;
-% isROI      = algoPara.isROI; 
 isParallel = algoPara.isParallel;
 userDefine = algoPara.userDefine;
+isInvivo   = algoPara.isInvivo;
+% isROI      = algoPara.isROI; 
 
-% if DEBUG on disables parallel computing
+% if DEBUG is on then disables parallel computing
 if DEBUG
     isParallel = false;
 end
@@ -76,6 +77,7 @@ if verbose
     else
         disp('Cost function weighted by echo intensity: False');
     end
+    
     % type of fitting
     if numMagn==0
         disp('Fitting complex model with complex data');
@@ -84,6 +86,7 @@ if verbose
     else
         fprintf('Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
     end
+    
     % initial guess and fitting bounds
     if isempty(userDefine.x0)
         disp('Default initial guess: True');
@@ -99,6 +102,13 @@ if verbose
         disp('Default upper bound: True');
     else
         disp('Default upper bound: False');
+    end
+        
+    % initial guess for in-vivo case
+    if isInvivo
+        disp('Initial guesses for in vivo study');
+    else
+        disp('Initial guesses for ex vivo study');
     end
 end
 
@@ -133,7 +143,7 @@ if isParallel
                     % T2*w
                     s = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                     db0 = fm(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
         end
@@ -149,7 +159,7 @@ else
                     % T2*w
                     s = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                     db0 = fm(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
         end
@@ -162,38 +172,72 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,options,DEBUG)
+function [x,res] = FitModel(s,te,db0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
 end
 
-Amy0   = 0.1*abs(s(1));     Amylb   = 0;        Amyub   = 1*abs(s(1));
-Aax0   = 0.6*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
-Aex0   = 0.3*abs(s(1));    	Aexlb   = 0;        Aexub   = 1*abs(s(1));
-t2smy0 = 10e-3;            	t2smylb = 1e-3;     t2smyub = 25e-3;
-t2sax0 = 64e-3;           	t2saxlb = 25e-3;    t2saxub = 150e-3;
-t2sex0 = 48e-3;           	t2sexlb = 25e-3;    t2sexub = 150e-3;
+% set initial guesses
+if isInvivo
+    % in vivo reference
+    Amy0   = 0.1*abs(s(1));     Amylb   = 0;        Amyub   = 1*abs(s(1));
+    Aax0   = 0.6*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
+    Aex0   = 0.3*abs(s(1));    	Aexlb   = 0;        Aexub   = 1*abs(s(1));
+    t2smy0 = 10e-3;            	t2smylb = 1e-3;     t2smyub = 25e-3;
+    t2sax0 = 64e-3;           	t2saxlb = 25e-3;    t2saxub = 150e-3;
+    t2sex0 = 48e-3;           	t2sexlb = 25e-3;    t2sexub = 150e-3;
 
-if numMagn==numel(te) % magnitude fitting
-    fmy0   = 5;           	fmylb   = 5-75;  	fmyub   = 5+75;
-    fax0   = 0;          	faxlb   = -25;      faxub   = +25;
+    if numMagn==numel(te) % magnitude fitting
+        fmy0   = 5;           	fmylb   = 5-75;  	fmyub   = 5+75;
+        fax0   = 0;          	faxlb   = -25;      faxub   = +25;
+
+        % set initial guess and fitting boundaries
+        x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0]);
+        lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb]);
+        ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub]);
+    else    % other fittings
+        fmy0   = db0;          	fmylb   = db0-75; 	fmyub   = db0+75;
+        fax0   = db0;          	faxlb   = db0-25;  	faxub   = db0+25;
+        fex0   = db0;          	fexlb   = db0-25;  	fexub   = db0+25;
+        pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -pi;         piniub=pi;
+
+        % set initial guess and fitting boundaries
+        x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0,fex0,pini0]);
+        lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb,fexlb,pinilb]);
+        ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub,fexub,piniub]);
+    end
     
-    % set initial guess and fitting boundaries
-    x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0]);
-    lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb]);
-    ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub]);
-else    % other fittings
-    fmy0   = db0;          	fmylb   = db0-75; 	fmyub   = db0+75;
-    fax0   = db0;          	faxlb   = db0-25;  	faxub   = db0+25;
-    fex0   = db0;          	fexlb   = db0-25;  	fexub   = db0+25;
-    pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -pi;         piniub=pi;
+else
+    % ex vivo reference
+    Amy0   = 0.15*abs(s(1));    Amylb   = 0;        Amyub   = 1*abs(s(1));
+    Aax0   = 0.65*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 1*abs(s(1));
+    Aex0   = 0.2*abs(s(1));    	Aexlb   = 0;        Aexub   = 1*abs(s(1));
+    t2smy0 = 10e-3;            	t2smylb = 1e-3;     t2smyub = 20e-3;
+    t2sax0 = 54e-3;           	t2saxlb = 20e-3;    t2saxub = 150e-3;
+    t2sex0 = 38e-3;           	t2sexlb = 20e-3;    t2sexub = 150e-3;
+
+    if numMagn==numel(te) % magnitude fitting
+        fmy0   = 5;           	fmylb   = 5-75;  	fmyub   = 5+75;
+        fax0   = 0;          	faxlb   = -25;      faxub   = +25;
+
+        % set initial guess and fitting boundaries
+        x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0]);
+        lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb]);
+        ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub]);
+    else    % other fittings
+        fmy0   = db0;          	fmylb   = db0-75; 	fmyub   = db0+75;
+        fax0   = db0;          	faxlb   = db0-25;  	faxub   = db0+25;
+        fex0   = db0;          	fexlb   = db0-25;  	fexub   = db0+25;
+        pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -pi;         piniub=pi;
+
+        % set initial guess and fitting boundaries
+        x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0,fex0,pini0]);
+        lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb,fexlb,pinilb]);
+        ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub,fexub,piniub]);
+    end
     
-    % set initial guess and fitting boundaries
-    x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0,fex0,pini0]);
-    lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb,fexlb,pinilb]);
-    ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub,fexub,piniub]);
 end
 
 % set initial guess and fitting bounds if they are provided
@@ -214,7 +258,7 @@ end
 
 %% compute the cost function of the optimisation problem
 function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
-% obatin fitting parameters
+% distribute fitting parameters
 Amy=x(1);    Aax=x(2);   Aex=x(3);
 t2smy=x(4);  t2sax=x(5); t2sex=x(6);
 fmybg=x(7);  faxbg=x(8); 
@@ -225,11 +269,11 @@ else    % other fittings
 end
 
 % simulate signal based on parameter input
-if numMagn==numel(te)
-    sHat = mwi_model_3cm_vGelderen2012(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg);
-else
+% if numMagn==numel(te)
+%     sHat = mwi_model_3cm_vGelderen2012(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg);
+% else
     sHat = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini);
-end
+% end
 
 % compute fitting residual
 if isWeighted
@@ -253,53 +297,54 @@ err = err ./ norm(abs(s(:)));
 
 % Debug module
 if DEBUG
-    global DEBUG_resnormAll
-    DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
-    figure(99);
-    if numMagn==numel(te)
-        subplot(211);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]);
-        title('Magnitude');
-        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');
-        hold off;
-        text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-        text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f',...
-            Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg));
-        subplot(212);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
-    else
-        subplot(411);
-        plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
-        plot(te(:).',imag(permute(s,[2 1])),'ks-');
-        ylim([min([real(s(:));imag(s(:))])*1.1,max([real(s(:));imag(s(:))])*1.1]);
-        title('Real and Imaginary');
-        subplot(412);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
-        ylim([0,max(abs(s(:)))*1.1]);
-        title('Magnitude');
-        subplot(413);plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
-        ylim([-4 4]);
-        title('Phase');
-        subplot(411);
-        plot(te(:).',real(permute(sHat,[2 1])),'bx-');
-        plot(te(:).',imag(permute(sHat,[2 1])),'b*-');
-        plot(te(:).',real(permute(sHat,[2 1]))-real(permute(s,[2 1])),'rx-.');
-        plot(te(:).',imag(permute(sHat,[2 1]))-imag(permute(s,[2 1])),'r*-.');hold off;
-        subplot(412);
-        plot(te(:).',abs(permute(sHat,[2 1])),'x-');
-        plot(te(:).',abs(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');hold off;
-        text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-        text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f,pini=%f',...
-            Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini));
-        subplot(413);
-        plot(te(:).',angle(permute(sHat,[2 1])),'x-');
-        plot(te(:).',angle(permute(s.*conj(sHat),[2 1])),'ro-.');hold off;
-        subplot(414);
-        plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
-    end
-    if length(DEBUG_resnormAll) <300
-        xlim([0 300]);
-    else
-        xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
-    end
-    drawnow;
+    Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini);
+%     global DEBUG_resnormAll
+%     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
+%     figure(99);
+%     if numMagn==numel(te)
+%         subplot(211);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]);
+%         title('Magnitude');
+%         plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');
+%         hold off;
+%         text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+%         text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f',...
+%             Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg));
+%         subplot(212);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
+%     else
+%         subplot(411);
+%         plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
+%         plot(te(:).',imag(permute(s,[2 1])),'ks-');
+%         ylim([min([real(s(:));imag(s(:))])*1.1,max([real(s(:));imag(s(:))])*1.1]);
+%         title('Real and Imaginary');
+%         subplot(412);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
+%         ylim([0,max(abs(s(:)))*1.1]);
+%         title('Magnitude');
+%         subplot(413);plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
+%         ylim([-4 4]);
+%         title('Phase');
+%         subplot(411);
+%         plot(te(:).',real(permute(sHat,[2 1])),'bx-');
+%         plot(te(:).',imag(permute(sHat,[2 1])),'b*-');
+%         plot(te(:).',real(permute(sHat,[2 1]))-real(permute(s,[2 1])),'rx-.');
+%         plot(te(:).',imag(permute(sHat,[2 1]))-imag(permute(s,[2 1])),'r*-.');hold off;
+%         subplot(412);
+%         plot(te(:).',abs(permute(sHat,[2 1])),'x-');
+%         plot(te(:).',abs(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');hold off;
+%         text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+%         text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f,pini=%f',...
+%             Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini));
+%         subplot(413);
+%         plot(te(:).',angle(permute(sHat,[2 1])),'x-');
+%         plot(te(:).',angle(permute(s.*conj(sHat),[2 1])),'ro-.');hold off;
+%         subplot(414);
+%         plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
+%     end
+%     if length(DEBUG_resnormAll) <300
+%         xlim([0 300]);
+%     else
+%         xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
+%     end
+%     drawnow;
 end
 
 end
@@ -366,6 +411,12 @@ try
 catch
     algoPara2.numMagn = numel(imgPara.te);
 end
+% check # of phase-corrupted echoes
+try
+    algoPara2.isInvivo = algoPara.isInvivo;
+catch
+    algoPara2.isInvivo = true;
+end
 % check user bounds and initial guesses
 try
     algoPara2.userDefine.x0 = algoPara.userDefine.x0;
@@ -400,4 +451,56 @@ catch
     disp('Field map input: False');
 end
 
+end
+
+%% Info display for debug mode
+function Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini)
+    global DEBUG_resnormAll
+    DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
+    figure(99);
+
+    if numMagn==numel(te)
+        subplot(211);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]);
+        title('Magnitude');
+        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');
+        hold off;
+        text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+        text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f',...
+            Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg));
+        subplot(212);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
+    else
+        subplot(411);
+        plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
+        plot(te(:).',imag(permute(s,[2 1])),'ks-');
+        ylim([min([real(s(:));imag(s(:))])*1.1,max([real(s(:));imag(s(:))])*1.1]);
+        title('Real and Imaginary');
+        subplot(412);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
+        ylim([0,max(abs(s(:)))*1.1]);
+        title('Magnitude');
+        subplot(413);plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
+        ylim([-4 4]);
+        title('Phase');
+        subplot(411);
+        plot(te(:).',real(permute(sHat,[2 1])),'bx-');
+        plot(te(:).',imag(permute(sHat,[2 1])),'b*-');
+        plot(te(:).',real(permute(sHat,[2 1]))-real(permute(s,[2 1])),'rx-.');
+        plot(te(:).',imag(permute(sHat,[2 1]))-imag(permute(s,[2 1])),'r*-.');hold off;
+        subplot(412);
+        plot(te(:).',abs(permute(sHat,[2 1])),'x-');
+        plot(te(:).',abs(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');hold off;
+        text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+        text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f,pini=%f',...
+            Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini));
+        subplot(413);
+        plot(te(:).',angle(permute(sHat,[2 1])),'x-');
+        plot(te(:).',angle(permute(s.*conj(sHat),[2 1])),'ro-.');hold off;
+        subplot(414);
+        plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
+    end
+    if length(DEBUG_resnormAll) <300
+        xlim([0 300]);
+    else
+        xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
+    end
+    drawnow;
 end
