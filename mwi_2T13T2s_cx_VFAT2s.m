@@ -154,8 +154,11 @@ resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
         if verbose
-            fprintf('Processing slice %i\n',kz);
+            fprintf('Processing slice %i...\n',kz);
         end
+        numVoxelToBeFitted = length(find(mask(:,:,kz)==1));
+        fprintf('%i voxles need to be fitted...\n',numVoxelToBeFitted);
+%         fprintf('Progress (%%): ');
         for ky=1:ny
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -166,7 +169,16 @@ if isParallel
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,npulse,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
                 end
             end
+%             numVoxelFitted = length(find(mask(1:ky,:,kz)==1));
+%             percentFinish = floor(numVoxelFitted/numVoxelToBeFitted * 100);
+%             if percentFinish>1
+%               for j=0:log10(percentFinish-1)
+%                   fprintf('\b'); % delete previous counter display
+%               end
+%               fprintf('%i',percentFinish);
+%             end
         end
+%         fprintf('\n');
     end
 else
     for kz=1:nz
@@ -228,8 +240,8 @@ else
     t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 20e-3;
     t2siw0 = 54e-3; 	t2siwlb = 20e-3;    t2siwub = 200e-3;
     t2sew0 = 38e-3; 	t2sewlb = 20e-3;    t2sewub = 200e-3;
-    t1s0   = 200e-3;  	t1slb   = 50e-3;  	t1sub   = 450e-3;
-    t1l0   = t10;     	t1llb   = 400e-3; 	t1lub   = 2000e-3;
+    t1s0   = 100e-3;  	t1slb   = 50e-3;  	t1sub   = 400e-3;
+    t1l0   = t10;     	t1llb   = 300e-3; 	t1lub   = 1500e-3;
     kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
     
 end
@@ -335,9 +347,9 @@ err = err./norm(abs(s));
 % if DEBUG then plots current fitting result
 if DEBUG
     global DEBUG_resnormAll
-    figure(99);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))+10]);
+    figure(99);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;ylim([0-min(abs(s(:))),max(abs(s(:)))+10]);
     title('Magnitude');
-    plot(te(:).',abs(permute(sHat,[2 1])),'x-');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');
+    plot(te(:).',abs(permute(sHat,[2 1])),'x-.');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'o-.');
     hold off;
     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
     text(te(1)/3,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,T1my=%f,T1l=%f,kmy=%f',...

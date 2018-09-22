@@ -1,0 +1,32 @@
+%% function output = function_name(input)
+%
+% Usage:
+%
+% Input
+% --------------
+%
+% Output
+% --------------
+%
+% Description:
+%
+% Kwok-shing Chan @ DCCN
+% k.chan@donders.ru.nl
+% Date created: 
+% Date last modified:
+%
+%
+function s = mwi_model_2T13T2s(afa,te,tr,s0,mwf,iaf,t2smy,t2sax,t2sex,t1my,t1ax,fmy,fax,b1)
+
+if nargin < 15
+    b1=1;
+end
+
+[cfa,te] = ndgrid(afa*b1,te);
+
+% s = sum(s_n) = sum(rho_n * T1w_n * T2s_n);
+s = s0*(mwf*(sind(cfa)*(1-exp(-tr/t1my))./(1-cosd(cfa)*exp(-tr/t1my))).*exp(-te*(1/t2smy+1i*2*pi*fmy)) + ...
+        (1-mwf)*iaf*(sind(cfa)*(1-exp(-tr/t1ax))./(1-cosd(cfa)*exp(-tr/t1ax))).*exp(-te*(1/t2sax+1i*2*pi*fax)) + ...
+        (1-mwf).*exp(-te*(1/t2sex)));
+    
+end

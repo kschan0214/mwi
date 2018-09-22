@@ -18,4 +18,7 @@ function mwf = ComputeMWF(fitRes)
 
 mwf = (fitRes.estimates(:,:,:,1)) ./ sum(fitRes.estimates(:,:,:,1:3),4);
 
+mwf(isnan(mwf)) = 0;
+mwf(isinf(mwf)) = 0;
+
 end

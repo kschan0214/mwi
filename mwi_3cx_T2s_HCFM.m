@@ -27,7 +27,7 @@
 %
 %
 function fitRes = mwi_3cx_T2s_wharton(algoPara,imgPara)
-disp('Myelin water imaing: MET2* model');
+disp('Myelin water imaing: ME-T2* Wharton and Bowtell model');
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
 if ~isValid
@@ -176,8 +176,8 @@ pd_m0   = 0.7;    	pd_mlb  = 0;        pd_mub  = 1;
 e0      = 0.02;     elb     = 0.02;     eub     = 0.02;
 t2_m0   = 15e-3;    t2_mlb  = 1e-3;     t2_mub  = 25e-3;
 t2_n0   = 64e-3;    t2_nlb  = 25e-3;    t2_nub  = 150e-3;
-chi_i0  = -0.1;     chi_ilb = -0.2;  	chi_iub = 0;
-chi_a0  = -0.1;     chi_alb = -0.2;     chi_aub = 0;
+chi_i0  = 0;     chi_ilb = -0.2;  	chi_iub = 0;
+chi_a0  = 0;     chi_alb = -0.2;     chi_aub = 0;
 theta0  = 45;       thetalb = 0;        thetaub = 90; 
 
 % set initial guess and fitting boundaries
