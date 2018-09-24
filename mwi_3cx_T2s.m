@@ -225,7 +225,7 @@ else    % other fittings
     fmy0   = db0;          	fmylb   = db0-75; 	fmyub   = db0+75;
     fax0   = db0;          	faxlb   = db0-25;  	faxub   = db0+25;
     fex0   = db0;          	fexlb   = db0-25;  	fexub   = db0+25;
-    pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -pi;         piniub=pi;
+    pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));        pinilb = -2*pi;         piniub=2*pi;
 
     % set initial guess and fitting boundaries
     x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0,fex0,pini0]);
