@@ -35,19 +35,27 @@
 % Date last modified: 
 %
 %
-function s = mwi_model_2T13T2scc_epgx(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,pini,b1,ka,npulse,T3D_all)
+function s = mwi_model_2T13T2scc_epgx(fa,te,tr,...
+                                      Amw,Aiw,Aew,...
+                                      t2smw,t2siw,t2sew,...
+                                      t1s,t1l,...
+                                      fmw,fiw,few,...
+                                      totalfield,pini,b1,ka,npulse,T3D_all)
 % set default values
 if nargin < 15
-    pini=0;
+    totalfield = 0;
 end
 if nargin < 16
-    b1=1;
+    pini=0;
 end
 if nargin < 17
+    b1=1;
+end
+if nargin < 18
 %     ka = 2e-3;    %ms^-1
     ka=2;   % s^-1
 end
-if nargin < 18
+if nargin < 19
     npulse = 200;
 end
 
@@ -59,7 +67,6 @@ t1x = [t1l, t1s];
 t2x = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
 fx = Amw/(Aiw+Aew+Amw); % mwf
 fs = (fmw-fiw); % frequency difference between long and short T1 compartments
-
 nfa=length(fa);
 SF = zeros(nfa,2);
 for ii=1:nfa
@@ -84,12 +91,18 @@ end
 % initiate 2D signal with the saturation factors
 [SFmy,teM] = ndgrid(SF(:,1),te);
 [SFl,~] = ndgrid(SF(:,2),te);
+if length(totalfield) == nfa
+    [totalfield,~] = ndgrid(totalfield,te);
+end
+if length(pini) == nfa
+    [pini,~] = ndgrid(pini,te);
+end
 
 %% T2* weighting applied here
 s = (Amw+Aiw+Aew) * ...
-    (SFmy               .*exp(-teM*(1/t2smw+1i*2*pi*fmw)) + ... % mw
-     SFl*(Aiw/(Aiw+Aew)).*exp(-teM*(1/t2siw+1i*2*pi*fiw)) + ... % iw
-     SFl*(Aew/(Aiw+Aew)).*exp(-teM*(1/t2sew+1i*2*pi*few)))* ... % ew
-     exp(-1i*pini);                                             % initial phase
+    (SFmy               .*exp(-teM*(1/t2smw-1i*2*pi*fmw)) + ...     % mw
+     SFl*(Aiw/(Aiw+Aew)).*exp(-teM*(1/t2siw-1i*2*pi*fiw)) + ...     % iw
+     SFl*(Aew/(Aiw+Aew)).*exp(-teM*(1/t2sew-1i*2*pi*few))).* ...    % ew
+     exp(1i*2*pi*totalfield.*teM).*exp(-1i*pini);                         % initial phase and total field
 
 end
