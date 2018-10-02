@@ -29,6 +29,7 @@ algoParam.isParallel    = false;
 algoParam.isWeighted    = false; % cost function weighted by abs(echo)/norm(echoes)
 algoParam.DEBUG         = false;
 algoParam.numMagn       = 1;       % mixed fitting
+algoParam.isInvivi      = true;       % mixed fitting
 
 imgParam.te         = [];
 imgParam.img        = [];
