@@ -59,7 +59,7 @@ isWeighted   = algoPara.isWeighted;
 weightMethod = algoPara.weightMethod;
 userDefine   = algoPara.userDefine;
 isParallel   = algoPara.isParallel;
-isInvivo   = algoPara.isInvivo;
+isInvivo     = algoPara.isInvivo;
 
 % check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
@@ -156,8 +156,8 @@ if isParallel
         if verbose
             fprintf('Processing slice %i...\n',kz);
         end
-        numVoxelToBeFitted = length(find(mask(:,:,kz)==1));
-        fprintf('%i voxles need to be fitted...\n',numVoxelToBeFitted);
+%         numVoxelToBeFitted = length(find(mask(:,:,kz)==1));
+%         fprintf('%i voxles need to be fitted...\n',numVoxelToBeFitted);
 %         fprintf('Progress (%%): ');
         for ky=1:ny
             parfor kx=1:nx
@@ -450,6 +450,12 @@ try
 catch
     algoPara2.userDefine.ub = [];
 end
+% check initial guesses
+try
+    imgPara2.isInvivo = imgPara.isInvivo;
+catch
+    imgPara2.isInvivo = true;
+end
 
 % check signal mask
 try
@@ -476,13 +482,5 @@ catch
     disp('Field map input: False');
 end
 
-% check initial guesses
-try
-    imgPara2.isInvivo = imgPara.isInvivo;
-%     disp('Field map input: True');
-catch
-    imgPara2.isInvivo = true;
-%     disp('Field map input: False');
-end
 
 end

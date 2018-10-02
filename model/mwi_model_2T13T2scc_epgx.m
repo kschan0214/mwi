@@ -87,9 +87,9 @@ end
 
 %% T2* weighting applied here
 s = (Amw+Aiw+Aew) * ...
-    (SFmy               .*exp(-teM*(1/t2smw+1i*2*pi*fmw)) + ... % mw
-     SFl*(Aiw/(Aiw+Aew)).*exp(-teM*(1/t2siw+1i*2*pi*fiw)) + ... % iw
-     SFl*(Aew/(Aiw+Aew)).*exp(-teM*(1/t2sew+1i*2*pi*few)))* ... % ew
+    (SFmy               .*exp(-teM*(1/t2smw-1i*2*pi*fmw)) + ... % mw
+     SFl*(Aiw/(Aiw+Aew)).*exp(-teM*(1/t2siw-1i*2*pi*fiw)) + ... % iw
+     SFl*(Aew/(Aiw+Aew)).*exp(-teM*(1/t2sew-1i*2*pi*few)))* ... % ew
      exp(-1i*pini);                                             % initial phase
 
 end
