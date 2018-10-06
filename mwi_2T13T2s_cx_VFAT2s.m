@@ -37,6 +37,9 @@
 %
 %
 function fitRes = mwi_2T13T2s_cx_VFAT2s(algoPara,imgPara)
+% make sure computeFiter in the same tool is used
+% addpath('utils/');
+
 disp('Myelin water imaing: VFA-T2* model');
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
@@ -203,7 +206,11 @@ else
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
                 end
             end
+            if mod(ky,5) == 0;
+                fprintf('%i ', ky);
+            end
         end
+        fprintf('\n');
     end
 end
 

@@ -44,6 +44,7 @@ if ContainName(method,'vfa')
     imgParam.tr     = [];
     imgParam.fa     = [];
     imgParam.b1map  = [];
+    imgParam.pini   = [];
 end
 
 

@@ -63,9 +63,9 @@ fm    = imgPara.fieldmap;
 % for complex fitting we doubled the elements in the cost function
 % fcnTol = fcnTol./(2*numel(te)-numMagn);
 % fcnTol = fcnTol./(numel(te));
-if numMagn~=numel(te)
-    fcnTol = fcnTol*10;
-end
+% if numMagn~=numel(te)
+%     fcnTol = fcnTol*10;
+% end
 
 % display fitting message
 if verbose
@@ -267,7 +267,8 @@ sHat = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,
 % compute fitting residual
 if isWeighted
     % weighted the cost function by echo intensity, as suggested in Nam's paper
-    w = abs(s(:))/norm(abs(s(:)));
+%     w = abs(s(:))/norm(abs(s(:)));
+    w = sqrt(abs(s)/norm(abs(s(:))));
     err = computeFiter(s,sHat,numMagn,w);
 %     w = abs(s(:));
 %     err = err.*w(:);
@@ -286,7 +287,7 @@ err = err ./ norm(abs(s(:)));
 
 % Debug module
 if DEBUG
-    Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini);
+    Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini,numMagn);
 end
 
 end
@@ -396,7 +397,7 @@ end
 end
 
 %% Info display for debug mode
-function Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini)
+function Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini,numMagn)
     global DEBUG_resnormAll
     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
     figure(99);
@@ -423,19 +424,19 @@ function Debug_display(s,sHat,err,te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,f
         ylim([-4 4]);
         title('Phase');
         subplot(411);
-        plot(te(:).',real(permute(sHat,[2 1])),'bx-');
-        plot(te(:).',imag(permute(sHat,[2 1])),'b*-');
-        plot(te(:).',real(permute(sHat,[2 1]))-real(permute(s,[2 1])),'rx-.');
-        plot(te(:).',imag(permute(sHat,[2 1]))-imag(permute(s,[2 1])),'r*-.');hold off;
+        plot(te(:).',real(permute(sHat(:),[2 1])),'bx-');
+        plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-');
+        plot(te(:).',real(permute(sHat(:),[2 1]))-real(permute(s(:),[2 1])),'rx-.');
+        plot(te(:).',imag(permute(sHat(:),[2 1]))-imag(permute(s(:),[2 1])),'r*-.');hold off;
         subplot(412);
-        plot(te(:).',abs(permute(sHat,[2 1])),'x-');
-        plot(te(:).',abs(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'ro-.');hold off;
+        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');
+        plot(te(:).',abs(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');hold off;
         text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
         text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f,pini=%f',...
             Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini));
         subplot(413);
-        plot(te(:).',angle(permute(sHat,[2 1])),'x-');
-        plot(te(:).',angle(permute(s.*conj(sHat),[2 1])),'ro-.');hold off;
+        plot(te(:).',angle(permute(sHat(:),[2 1])),'x-');
+        plot(te(:).',angle(permute(s(:).*conj(sHat(:)),[2 1])),'ro-.');hold off;
         subplot(414);
         plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
     end
