@@ -35,12 +35,13 @@
 % Date last modified: 
 %
 %
-function s = mwi_model_2T13T2scc_epgx(fa,te,tr,...
+function s = mwi_model_2T13T2scc_epgx_moreoption(fa,te,tr,...
                                       Amw,Aiw,Aew,...
                                       t2smw,t2siw,t2sew,...
                                       t1s,t1l,...
                                       fmw,fiw,few,...
-                                      totalfield,pini,b1,ka,npulse,T3D_all)
+                                      totalfield,pini,b1,ka,npulse,T3D_all,...
+                                      model)
 % set default values
 if nargin < 15
     totalfield = 0;
@@ -58,6 +59,10 @@ end
 if nargin < 19
     npulse = 200;
 end
+if nargin < 21
+    model = 'epgx';
+end
+
 
 %% T1 weighting with RF spoiling
 % EPG-X
@@ -72,20 +77,37 @@ SF = zeros(nfa,2);
 for ii=1:nfa
     % true flip angle
     alpha = fa(ii)*b1;
-
    
     % Compute RF spoling phase cycles
     % 2 pools, with exchange
-    % start with steady-state signals, longitudinal magnetisation (Mz)
-    z1 = Signal_GRE_T1wMono((1-fx), alpha, t1x(1), tr)/sind(alpha);
-    z2 = Signal_GRE_T1wMono(fx, alpha, t1x(2), tr)/sind(alpha);
-    % EPG-X core
-    tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
+    % start with steady-state signals, transverse magnitisation
+    s1 = Signal_GRE_T1wMono((1-fx), alpha, t1x(1), tr);
+    s2 = Signal_GRE_T1wMono(fx, alpha, t1x(2), tr);
     
+    switch lower(model)
+        case 'epgx'
+            % EPG-X core
+            z1 = s1/sind(alpha);    % long T1 compartment, longitudinal magnitisation
+            z2 = s2/sind(alpha);    % short T1 compartment, longitudinal magnitisation
+            tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
+            SF(ii,1) = abs(tmp{2}(end));
+            SF(ii,2) = abs(tmp{1}(end)); 
+
+        case 'epg'
+            AA = d2r(alpha)*ones(npulse,1);
+            tmp{1} = EPG_GRE(AA,phiCycle,tr,t1x(1),t2x(1));
+            tmp{2} = EPG_GRE(AA,phiCycle,tr,t1x(2),t2x(2));
+            
+        case 'standard'
+            SF(ii,1) = s2;
+            SF(ii,2) = s1;
+    end
     % saturation factors
     % Note: no effect if abs is taken here
-    SF(ii,1) = abs(tmp{2}(end));
-    SF(ii,2) = abs(tmp{1}(end));    
+%     SF(ii,1) = abs(tmp{2}(end));
+%     SF(ii,2) = abs(tmp{1}(end));    
+%     SF(ii,1) = z2;
+%     SF(ii,2) = z1;   
 end
 
 % initiate 2D signal with the saturation factors

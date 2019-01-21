@@ -233,15 +233,18 @@ else    % other fittings
     ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub,fexub,piniub]);
 end
 
-% set initial guess and fitting bounds if they are provided
+% set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
-    x0 = userDefine.x0;
+%     x0 = userDefine.x0;
+    x0(~isnan(userDefine.x0)) = userDefine.x0(~isnan(userDefine.x0));
 end
 if ~isempty(userDefine.lb)
-    lb = userDefine.lb;
+%     lb = userDefine.lb;
+    lb(~isnan(userDefine.lb)) = userDefine.lb(~isnan(userDefine.lb));
 end
 if ~isempty(userDefine.ub)
-    ub = userDefine.ub;
+%     ub = userDefine.ub;
+    ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
 end
 
 % run fitting algorithm here
@@ -263,6 +266,10 @@ end
 
 % simulate signal based on parameter input
 sHat = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini);
+
+if size(sHat,1) ~= size(s,1)
+    sHat = sHat.';
+end
 
 % compute fitting residual
 if isWeighted
