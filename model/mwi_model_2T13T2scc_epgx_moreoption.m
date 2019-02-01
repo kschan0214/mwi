@@ -40,7 +40,7 @@ function s = mwi_model_2T13T2scc_epgx_moreoption(fa,te,tr,...
                                       t2smw,t2siw,t2sew,...
                                       t1s,t1l,...
                                       fmw,fiw,few,...
-                                      totalfield,pini,b1,ka,npulse,T3D_all,...
+                                      totalfield,pini,b1,ka,npulse,RFphi0,T3D_all,...
                                       model)
 % set default values
 if nargin < 15
@@ -59,15 +59,18 @@ end
 if nargin < 19
     npulse = 200;
 end
-if nargin < 21
+if nargin < 20
+    RFphi0 = 50;
+end
+if nargin < 22
     model = 'epgx';
 end
 
 
 %% T1 weighting with RF spoiling
 % EPG-X
-phi0 = 50;      % initial RF phase
-phiCycle = RF_phase_cycle(npulse,phi0);
+% phi0 = 50;      % initial RF phase
+phiCycle = RF_phase_cycle(npulse,RFphi0);
 t1x = [t1l, t1s]; 
 t2x = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
 fx = Amw/(Aiw+Aew+Amw); % mwf
@@ -84,30 +87,39 @@ for ii=1:nfa
     s1 = Signal_GRE_T1wMono((1-fx), alpha, t1x(1), tr);
     s2 = Signal_GRE_T1wMono(fx, alpha, t1x(2), tr);
     
+    % Note: minimum effect if abs. is taken here
+    % saturation factors
     switch lower(model)
         case 'epgx'
             % EPG-X core
-            z1 = s1/sind(alpha);    % long T1 compartment, longitudinal magnitisation
-            z2 = s2/sind(alpha);    % short T1 compartment, longitudinal magnitisation
+            z1 = s1/sind(alpha);    % long T1 compartment, longitudinal magnitisation (z-state)
+            z2 = s2/sind(alpha);    % short T1 compartment, longitudinal magnitisation (z-state)
             tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,ka,'delta',fs,'kmax',10,'ss',[z1,z2]);
-            SF(ii,1) = abs(tmp{2}(end));
-            SF(ii,2) = abs(tmp{1}(end)); 
+%             SF(ii,1) = abs(tmp{2}(end));
+%             SF(ii,2) = abs(tmp{1}(end)); 
+            SF(ii,1) = (tmp{2}(end));
+            SF(ii,2) = (tmp{1}(end));
+%             SF(ii,1) = conj(tmp{2}(end));
+%             SF(ii,2) = conj(tmp{1}(end));
 
         case 'epg'
             AA = d2r(alpha)*ones(npulse,1);
-            tmp{1} = EPG_GRE(AA,phiCycle,tr,t1x(1),t2x(1));
-            tmp{2} = EPG_GRE(AA,phiCycle,tr,t1x(2),t2x(2));
+%             tmp{1} = EPG_GRE(AA,phiCycle,tr,t1x(1),t2x(1),'kmax',10);
+%             tmp{2} = EPG_GRE(AA,phiCycle,tr,t1x(2),t2x(2),'kmax',10);
+%             z1 = s1/sind(alpha);    % long T1 compartment, longitudinal magnitisation (z-state)
+%             z2 = s2/sind(alpha);    % short T1 compartment, longitudinal magnitisation (z-state)
+%             tmp2{1} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(1),t2x(1),'kmax',10,'ss',z1);
+%             tmp2{2} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(2),t2x(2),'kmax',10,'ss',z2);
+            tmp{1} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(1),t2x(1),'kmax',10);
+            tmp{2} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(2),t2x(2),'kmax',10);
+            SF(ii,1) = (tmp{2}(end))*fx;
+            SF(ii,2) = (tmp{1}(end))*(1-fx); 
             
         case 'standard'
             SF(ii,1) = s2;
             SF(ii,2) = s1;
     end
-    % saturation factors
-    % Note: no effect if abs is taken here
-%     SF(ii,1) = abs(tmp{2}(end));
-%     SF(ii,2) = abs(tmp{1}(end));    
-%     SF(ii,1) = z2;
-%     SF(ii,2) = z1;   
+     
 end
 
 % initiate 2D signal with the saturation factors

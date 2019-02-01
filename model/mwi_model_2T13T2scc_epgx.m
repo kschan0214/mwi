@@ -84,8 +84,10 @@ for ii=1:nfa
     
     % saturation factors
     % Note: no effect if abs is taken here
-    SF(ii,1) = abs(tmp{2}(end));
-    SF(ii,2) = abs(tmp{1}(end));    
+%     SF(ii,1) = abs(tmp{2}(end));
+%     SF(ii,2) = abs(tmp{1}(end));    
+    SF(ii,1) = (tmp{2}(end));
+    SF(ii,2) = (tmp{1}(end)); 
 end
 
 % initiate 2D signal with the saturation factors
