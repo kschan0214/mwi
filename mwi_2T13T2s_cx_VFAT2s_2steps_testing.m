@@ -433,14 +433,14 @@ Aiw = estimates(nfa+1:2*nfa);
 Aew = estimates(2*nfa+1:3*nfa);
 
 A = [Amw(:);Aiw(:);Aew(:)];
-t2 = [3*nfa+1:3*nfa+2];
+t2 = estimates(3*nfa+1:3*nfa+2);
 % % T2* and frequencies are fixed in this step
 % t2s = estimates(3*nfa+1:3*nfa+3);
-% if numMagn==numel(te)
-%     freq = estimates(3*nfa+4:3*nfa+5);
-% else
-%     freq = estimates(3*nfa+4:3*nfa+6);
-% end
+if numMagn==numel(te)
+    freq = estimates(3*nfa+4:3*nfa+5);
+else
+    freq = estimates(3*nfa+4:3*nfa+6);
+end
 
 % estimate proton density of each pool based on MC-T2s fitting
 rho = zeros(1,3);
@@ -487,31 +487,15 @@ end
 x0 = double([Amw0 ,Aiw0 ,Aew0 ,t1s0 ,t1l0]);
 lb = double([Amwlb,Aiwlb,Aewlb,t1slb,t1llb]);
 ub = double([Amwub,Aiwub,Aewub,t1sub,t1lub]);
-if numMagn==numel(te) % magnitude fitting
-    if strcmpi(model,'epgx')
-        x0 = double([x0,kls0]);
-        lb = double([lb,klslb]);
-        ub = double([ub,klsub]);
-    end
-    
-else    % other fittings
-    totalField0 = estimates(3*nfa+7:4*nfa+6).';	totalFieldlb   = estimates(3*nfa+7:4*nfa+6).'-100;	totalFieldub    = estimates(3*nfa+7:4*nfa+6).'+100;
-    pini0       = estimates(4*nfa+7:end).';   	pinilb         = ones(size(pini0))*(-2*pi);         piniub          = ones(size(pini0))*2*pi;
-    
-    if strcmpi(model,'epgx')
-        % set initial guess and fitting boundaries
-        x0 = double([x0,kls0,totalField0,pini0]);
-        lb = double([lb,klslb,totalFieldlb,pinilb]);
-        ub = double([ub,klsub,totalFieldub,piniub]);
-    else
-        % set initial guess and fitting boundaries
-        x0 = double([x0 ,totalField0,pini0]);
-        lb = double([lb,totalFieldlb,pinilb]);
-        ub = double([ub,totalFieldub,piniub]);
-
-    end
-    
+if strcmpi(model,'epgx')
+    x0 = double([x0,kls0,20e-3,100e-3]);
+    lb = double([lb,klslb,t2(1),t2(2)]);
+    ub = double([ub,klsub,30e-3,300e-3]);
+%     x0 = double([x0,kls0]);
+%     lb = double([lb,klslb]);
+%     ub = double([ub,klsub]);
 end
+    
 
 % set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
@@ -547,20 +531,20 @@ elseif strcmpi(model,'epg')
 end
 
 % run lsqnonlin!
-[x,res] = lsqnonlin(@(y)CostFunc_vfa(y,s,fa,te,tr,b1,t2s,freq,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc_vfa(y,A,fa,te,tr,b1,t2,freq,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc_vfa(x,s,fa,te,tr,b1,t2s,freq,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG)
+function err = CostFunc_vfa(x,A,fa,te,tr,b1,t2,freq,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG)
 % fixed parameters
-t2smw=t2s(1); t2siw=t2s(2); t2sew=t2s(3);
+% t2smw=t2(1); t2siw=t2(2);
 fmw=freq(1);   fiw=freq(2); 
 
 % fitting parameters
 Amw=x(1);   Aiw=x(2);   Aew=x(3);
 t1s=x(4);   t1l=x(5);
- 
+ t2smw=x(7); t2siw=x(8);
 if numMagn==numel(te) % magnitude fitting
     few = 0;        
     if strcmpi(model,'epgx')
@@ -568,70 +552,117 @@ if numMagn==numel(te) % magnitude fitting
     else
         kls = 0;
     end
-    % no initial phase 
-    pini=0;
-    totalfield = 0;
 else    % other fittings
     few=freq(3);      
     if strcmpi(model,'epgx')
         kls=x(6);
-        totalfield = x(7:7+length(fa)-1);
-        pini       = x(7+length(fa):end);
     else
         kls=0;
-        totalfield = x(6:6+length(fa)-1);
-        pini       = x(6+length(fa):end);
     end
 end
 
 % simulate signal based on parameter input
 % sHat = mwi_model_2T13T2scc_epgx(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,totalfield,pini,b1,kls,npulse,T3D_all);
-sHat = mwi_model_2T13T2scc_epgx_moreoption(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,totalfield,pini,b1,kls,npulse,RFphi0,T3D_all,model);
+% sHat = mwi_model_2T13T2scc_epgx_moreoption(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,totalfield,pini,b1,kls,npulse,RFphi0,T3D_all,model);
 
-% compute fitting residual
-if isWeighted
-    switch weightMethod
-        case 'norm'
-            % weights using echo intensity, as suggested in Nam's paper
-%             w = abs(s(:))/norm(abs(s(:)));
-            % in this way the sum of all weights is the same as no
-            % weighting (which is sum(ones(size(s(:)))).)
-%             w = numel(s) * abs(s(:))/sum(abs(s(:)));
+phiCycle = RF_phase_cycle(npulse,RFphi0);
+t1x = [t1l, t1s]; 
+t2x = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
+fx = Amw/(Aiw+Aew+Amw); % mwf
+fs = (fmw-fiw); % frequency difference between long and short T1 compartments
+nfa=length(fa);
+SF = zeros(nfa,2);
+for ii=1:nfa
+    % true flip angle
+    alpha = fa(ii)*b1;
+   
+    % Compute RF spoling phase cycles
+    % 2 pools, with exchange
+    % start with steady-state signals, transverse magnitisation
+    s1 = Signal_GRE_T1wMono((1-fx), alpha, t1x(1), tr);
+    s2 = Signal_GRE_T1wMono(fx, alpha, t1x(2), tr);
+    
+    % Note: minimum effect if abs. is taken here
+    % saturation factors
+    switch lower(model)
+        case 'epgx'
+            % EPG-X core
+            z1 = s1/sind(alpha);    % long T1 compartment, longitudinal magnitisation (z-state)
+            z2 = s2/sind(alpha);    % short T1 compartment, longitudinal magnitisation (z-state)
+            tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,kls,'delta',fs,'kmax',10,'ss',[z1,z2]);
+            SF(ii,1) = abs(tmp{2}(end));
+            SF(ii,2) = abs(tmp{1}(end)); 
 
-            w = sqrt(abs(s)/sum(abs(s(:))));
-%            w =  abs(s)/sum(abs(s(:)));
-        case '1stEcho'
-            % weights using the 1st echo intensity of each flip angle
-            w = bsxfun(@rdivide,abs(s),abs(s(:,1)));
-%             w = numel(s) * w(:)/sum(w(:));
-            w = numel(s) * w/sum(w(:));
+        case 'epg'
+            AA = d2r(alpha)*ones(npulse,1);
+            tmp{1} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(1),t2x(1),'kmax',10);
+            tmp{2} = EPG_GRE_precomputedT(T3D_all{ii},AA,phiCycle,tr,t1x(2),t2x(2),'kmax',10);
+            SF(ii,1) = (tmp{2}(end))*fx;
+            SF(ii,2) = (tmp{1}(end))*(1-fx); 
+            
+        case 'standard'
+            SF(ii,1) = s2;
+            SF(ii,2) = s1;
     end
-    % compute the cost with weights
-    err = computeFiter(s,sHat,numMagn,w);
-else
-    % compute the cost without weights
-    err = computeFiter(s,sHat,numMagn);
+     
 end
+AHat_mw = SF(:,1) * (Amw+Aiw+Aew);
+AHat_iw = SF(:,2) * (Amw+Aiw+Aew) * (Aiw/(Aiw+Aew));
+AHat_ew = SF(:,2) * (Amw+Aiw+Aew) * (Aew/(Aiw+Aew));
+AHat = [AHat_mw(:);AHat_iw(:);AHat_ew(:)];
+err = AHat - A;
+
+% % compute fitting residual
+% if isWeighted
+%     switch weightMethod
+%         case 'norm'
+%             % weights using echo intensity, as suggested in Nam's paper
+% %             w = abs(s(:))/norm(abs(s(:)));
+%             % in this way the sum of all weights is the same as no
+%             % weighting (which is sum(ones(size(s(:)))).)
+% %             w = numel(s) * abs(s(:))/sum(abs(s(:)));
+% 
+%             w = sqrt(abs(s)/sum(abs(s(:))));
+% %            w =  abs(s)/sum(abs(s(:)));
+%         case '1stEcho'
+%             % weights using the 1st echo intensity of each flip angle
+%             w = bsxfun(@rdivide,abs(s),abs(s(:,1)));
+% %             w = numel(s) * w(:)/sum(w(:));
+%             w = numel(s) * w/sum(w(:));
+%     end
+%     % compute the cost with weights
+%     err = computeFiter(s,sHat,numMagn,w);
+% else
+%     % compute the cost without weights
+%     err = computeFiter(s,sHat,numMagn);
+% end
 
 % residual normalied by measured signal
 % 20180316 TODO:maybe for weighted cost there should be another way to do this 
-err = err./norm(abs(s));
-
+% err = err./norm(abs(s));
+nfa = length(fa);
 % if DEBUG then plots current fitting result
 if DEBUG
     global DEBUG_resnormAll
-    figure(98);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;ylim([0-min(abs(s(:))),max(abs(s(:)))+10]);
+    figure(98);
+    subplot(2,3,1);plot(fa*b1,abs(A(1:nfa)),'^-');hold on;
+    subplot(2,3,2);plot(fa*b1,abs(A(nfa+1:2*nfa)),'^-');hold on;
+    subplot(2,3,3);plot(fa*b1,abs(A(2*nfa+1:end)),'^-');hold on;
+%     ylim([0-min(abs(s(:))),max(abs(s(:)))+10]);
     title('Magnitude');
-    plot(te(:).',abs(permute(sHat,[2 1])),'x-.');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'o-.');
-    hold off;
-    text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-    text(te(1)/3,max(abs(s(:))*0.1),sprintf('Amw=%f,Aiw=%f,Aew=%f,T1mw=%f,T1l=%f,koe=%f',...
-        Amw,Aiw,Aew,t1s,t1l,kls));
-    for kfa = 1:length(fa)
-        text(te(1)/3,abs(s(kfa,1)),['FA ' num2str(fa(kfa))]);
-    end
+    subplot(2,3,1);plot(fa*b1,abs(AHat(1:nfa)),'x-.');hold off;
+    subplot(2,3,2);plot(fa*b1,abs(AHat(nfa+1:2*nfa)),'x-.');hold off;
+    subplot(2,3,3);plot(fa*b1,abs(AHat(2*nfa+1:end)),'x-.');hold off;
+%     plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'o-.');
+%     hold off;
+%     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+    text(A(1)/3,max(abs(A(:))*0.1),sprintf('Amw=%f,Aiw=%f,Aew=%f,T1mw=%f,T1l=%f,koe=%f,t2s=%f,t2l=%f',...
+        Amw,Aiw,Aew,t1s,t1l,kls,t2smw,t2siw));
+%     for kfa = 1:length(fa)
+%         text(te(1)/3,abs(s(kfa,1)),['FA ' num2str(fa(kfa))]);
+%     end
     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
-    subplot(212);plot(DEBUG_resnormAll);
+    subplot(2,3,[4:6]);plot(DEBUG_resnormAll);
     if length(DEBUG_resnormAll) <300
         xlim([0 300]);
     else
