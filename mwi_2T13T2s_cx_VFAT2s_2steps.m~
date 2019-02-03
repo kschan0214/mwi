@@ -64,6 +64,7 @@ userDefine   = algoPara.userDefine;
 isParallel   = algoPara.isParallel;
 isInvivo     = algoPara.isInvivo;
 model        = algoPara.model;
+RFphi        = algoPara.RFphi;
 
 % check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
@@ -236,7 +237,7 @@ else
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
                     [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
-                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
+                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
             if mod(ky,5) == 0;
@@ -424,7 +425,7 @@ end
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel_vfa(s,fa,te,tr,b1,estimates,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
+function [x,res] = FitModel_vfa(s,fa,te,tr,b1,estimates,npulse,RFphi0,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
 nfa = length(fa);
 % get T1w signal estimated from MC-T2s fitting
 Amw = estimates(1:nfa);
@@ -437,6 +438,13 @@ if numMagn==numel(te)
     freq = estimates(3*nfa+4:3*nfa+5);
 else
     freq = estimates(3*nfa+4:3*nfa+6);
+end
+totalField = estimates(3*nfa+7:4*nfa+6).';	
+pini       = estimates(4*nfa+7:end).';
+
+A = zeros(length(fa),3);
+for kfa = 1:length(fa)
+    A(kfa,:) = mwi_DecomposeWaterFractionGivenT2sFreq(s(kfa,:),te,t2s,freq,totalField(kfa),pini(kfa));
 end
 
 % estimate proton density of each pool based on MC-T2s fitting
@@ -464,7 +472,7 @@ Aiw0   = rho(2)./sum(rho)*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
 Aew0   = rho(3)./sum(rho)*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
 if isInvivo
     % common initial guesses for in vivo study
-    t1s0   = 300e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
+    t1s0   = 118e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
     t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 3000e-3;
 %     t1s0   = t1(1);         t1slb   = 50e-3;  	t1sub   = 650e-3;
 %     t1l0   = mean(t1(2:3)); t1llb   = 500e-3; 	t1lub   = 3000e-3;
@@ -528,7 +536,7 @@ if DEBUG
     x0
 end
 
-RFphi0 = 50;      % initial RF phase, degrees
+% RFphi0 = 50;      % initial RF phase, degrees
 % precompute EPG-X's transition matrix here for speed
 T3D_all = cell(length(fa),1);
 if strcmpi(model,'epgx')
@@ -770,12 +778,9 @@ catch
 end
 
 try
-    algoPara2.model = algoPara.model;
-    if ~strcmpi(algoPara2.model,'epgx') && ~strcmpi(algoPara2.model,'epg') && ~strcmpi(algoPara2.model,'standard')
-        error('Your input model is not supported. Please choose either ''epgx'', ''epg'' or ''standard''. ');
-    end
+    algoPara2.RFphi = algoPara.RFphi;
 catch
-    algoPara2.model = 'epgx';
+    algoPara2.RFphi = 50;
 end
 
 

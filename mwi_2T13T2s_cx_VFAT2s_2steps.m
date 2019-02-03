@@ -181,7 +181,7 @@ else
 end
 
 if numMagn==numel(te)   % magnitude fitting has 10 estimates
-    estimates_step1 = zeros(ny,nx,nz,nfa*3+6);
+    estimates_step1 = zeros(ny,nx,nz,nfa*3+5);
 else
     estimates_step1 = zeros(ny,nx,nz,nfa*5+6);
 end
@@ -357,8 +357,8 @@ fmw=x(3*nfa+4);     fiw=x(3*nfa+5);
 if numMagn==numel(te) % magnitude fitting
     few = 0;        
     % no initial phase 
-    pini        = 0;
-    totalfield  = 0;
+    pini        = zeros(1,nfa);
+    totalfield  = zeros(1,nfa);
 else    % other fittings
     few = x(3*nfa+6);      
     totalfield = x(3*nfa+7:3*nfa+7+nfa-1);
@@ -436,9 +436,25 @@ Aew = estimates(2*nfa+1:3*nfa);
 t2s = estimates(3*nfa+1:3*nfa+3);
 if numMagn==numel(te)
     freq = estimates(3*nfa+4:3*nfa+5);
+    freq(3) = 0;
 else
     freq = estimates(3*nfa+4:3*nfa+6);
 end
+if numMagn == length(te)
+    totalField = zeros(1,nfa);
+    pini = zeros(1,nfa);
+else
+    totalField = estimates(3*nfa+7:4*nfa+6).';	
+    pini       = estimates(4*nfa+7:end).';
+end
+
+A = zeros(length(fa),3);
+for kfa = 1:length(fa)
+    A(kfa,:) = mwi_DecomposeWaterFractionGivenT2sFreq(s(kfa,:),te,t2s,freq,totalField(kfa),pini(kfa));
+end
+Amw = abs(A(:,1));
+Aiw = abs(A(:,2));
+Aew = abs(A(:,3));
 
 % estimate proton density of each pool based on MC-T2s fitting
 rho = zeros(1,3);
