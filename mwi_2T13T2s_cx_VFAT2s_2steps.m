@@ -113,40 +113,72 @@ if verbose
             
     end
     
-    if isWeighted
-        disp('Weighted cost function: True');
+    if isWeighted(1)
+        disp('MC-T2* fitting: Weighted cost function: True');
         disp(['Weighting method: ' weightMethod]);
     else
-        disp('Weighted cost function: False');
+        disp('MC-T2* fitting: Weighted cost function: False');
     end
+    if isWeighted(2)
+        disp('EPG-X fitting: Weighted cost function: True');
+        disp(['Weighting method: ' weightMethod]);
+    else
+        disp('EPG-X fitting: Weighted cost function: False');
+    end
+    
     if isInvivo
         disp('Initial guesses for in vivo study');
     else
         disp('Initial guesses for ex vivo study');
     end
+    
     % type of fitting
-    if numMagn==0
-        disp('Fitting complex model with complex data');
-    elseif numMagn==numel(te)
-        disp('Fitting complex model with magnitude data');
+    if numMagn(1)==0
+        disp('MC-T2* fitting: Fitting complex model with complex data');
+    elseif numMagn(1)==numel(te)
+        disp('MC-T2* fitting: Fitting complex model with magnitude data');
     else
-        fprintf('Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
+        fprintf('MC-T2* fitting: Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
     end
+    % type of fitting
+    if numMagn(2)==0
+        disp('EPG-X fitting: Fitting complex model with complex data');
+    elseif numMagn(2)==numel(te)
+        disp('EPG-X fitting: Fitting complex model with magnitude data');
+    else
+        fprintf('EPG-X fitting: Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
+    end
+    
     % initial guess and fitting bounds
-    if isempty(userDefine.x0)
-        disp('Default initial guess: True');
+    if isempty(userDefine(1).x0)
+        disp('MC-T2* fitting: Default initial guess: True');
     else
-        disp('Default initial guess: False');
+        disp('MC-T2* fitting: Default initial guess: False');
     end
-    if isempty(userDefine.lb)
-        disp('Default lower bound: True');
+    if isempty(userDefine(1).lb)
+        disp('MC-T2* fitting: Default lower bound: True');
     else
-        disp('Default lower bound: False');
+        disp('MC-T2* fitting: Default lower bound: False');
     end
-    if isempty(userDefine.ub)
-        disp('Default upper bound: True');
+    if isempty(userDefine(1).ub)
+        disp('MC-T2* fitting: Default upper bound: True');
     else
-        disp('Default upper bound: False');
+        disp('MC-T2* fitting: Default upper bound: False');
+    end
+    if isempty(userDefine(2).x0)
+        disp('EPG-X fitting: Default initial guess: True');
+    else
+        disp('EPG-X fitting: Default initial guess: False');
+    end
+    if isempty(userDefine(2).lb)
+        disp('EPG-X fitting: Default lower bound: True');
+    else
+        disp('EPG-X fitting: Default lower bound: False');
+    end
+    if isempty(userDefine(2).ub)
+        disp('EPG-X fitting: Default upper bound: True');
+    else
+        disp('EPG-X fitting: Default upper bound: False');
     end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -154,33 +186,36 @@ end
 [ny,nx,nz,~,nfa] = size(data);
 
 % lsqnonlin setting
-options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*11,...
-        'FunctionTolerance',fcnTol,'StepTolerance',1e-6);
+options_step1 = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*11,...
+        'FunctionTolerance',fcnTol(1),'StepTolerance',1e-6);
+options_step2 = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*11,...
+        'FunctionTolerance',fcnTol(2),'StepTolerance',1e-6);
   
 % fdss = [1e-4,1e-4,1e-4,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8,1e-8];  
 % options.FiniteDifferenceStepSize = fdss;
 
 % if DEBUG then display fitting message
 if ~DEBUG
-    options.Display = 'off';
+    options_step1.Display = 'off';
+    options_step2.Display = 'off';
 end
 
 if strcmpi(model,'epgx')
     % EPG-X has an extra exchange term
-    if numMagn==numel(te)   % magnitude fitting has 11 estimates
+    if numMagn(2)==numel(te)   % magnitude fitting has 11 estimates
         estimates_step2 = zeros(ny,nx,nz,6);
     else
         estimates_step2 = zeros(ny,nx,nz,6+nfa*2); % others have 12 estimates
     end
 else
-    if numMagn==numel(te)   % magnitude fitting has 10 estimates
+    if numMagn(2)==numel(te)   % magnitude fitting has 10 estimates
         estimates_step2 = zeros(ny,nx,nz,5);
     else
         estimates_step2 = zeros(ny,nx,nz,5+nfa*2); % others have 12 estimates
     end
 end
 
-if numMagn==numel(te)   % magnitude fitting has 10 estimates
+if numMagn(1)==numel(te)   % magnitude fitting has 10 estimates
     estimates_step1 = zeros(ny,nx,nz,nfa*3+5);
 else
     estimates_step1 = zeros(ny,nx,nz,nfa*5+6);
@@ -236,8 +271,8 @@ else
                     b1 = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
-                    [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG);
-                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
+                    [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn(1),isWeighted(1),weightMethod,isInvivo,userDefine(1),options_step1,DEBUG);
+                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn(2),isWeighted(2),weightMethod,isInvivo,model,userDefine(2),options_step2,DEBUG);
                 end
             end
             if mod(ky,5) == 0;
@@ -394,8 +429,9 @@ if isWeighted
     % compute the cost with weights
     err = computeFiter(s,sHat,numMagn,w);
 else
+    w = sqrt(ones(size(s))/numel(s));
     % compute the cost without weights
-    err = computeFiter(s,sHat,numMagn);
+    err = computeFiter(s,sHat,numMagn,w);
 end
 
 % residual normalied by measured signal
@@ -434,34 +470,31 @@ Aew = estimates(2*nfa+1:3*nfa);
 
 % T2* and frequencies are fixed in this step
 t2s = estimates(3*nfa+1:3*nfa+3);
-if numMagn==numel(te)
+if length(estimates) < 3*nfa+6
     freq = estimates(3*nfa+4:3*nfa+5);
     freq(3) = 0;
-else
-    freq = estimates(3*nfa+4:3*nfa+6);
-end
-if numMagn == length(te)
     totalField = zeros(1,nfa);
     pini = zeros(1,nfa);
 else
+    freq = estimates(3*nfa+4:3*nfa+6);
     totalField = estimates(3*nfa+7:4*nfa+6).';	
     pini       = estimates(4*nfa+7:end).';
 end
 
-A = zeros(length(fa),3);
-for kfa = 1:length(fa)
-    A(kfa,:) = mwi_DecomposeWaterFractionGivenT2sFreq(s(kfa,:),te,t2s,freq,totalField(kfa),pini(kfa));
-end
-Amw = abs(A(:,1));
-Aiw = abs(A(:,2));
-Aew = abs(A(:,3));
+% A = zeros(length(fa),3);
+% for kfa = 1:length(fa)
+%     A(kfa,:) = mwi_DecomposeWaterFractionGivenT2sFreq(s(kfa,:),te,t2s,freq,totalField(kfa),pini(kfa));
+% end
+% Amw = abs(A(:,1));
+% Aiw = abs(A(:,2));
+% Aew = abs(A(:,3));
 
-% estimate proton density of each pool based on MC-T2s fitting
-rho = zeros(1,3);
-t1 = zeros(1,3);
-[t1(1),rho(1)] = DESPOT1(abs(Amw),fa,tr,'b1',b1);
-[t1(2),rho(2)] = DESPOT1(abs(Aiw),fa,tr,'b1',b1);
-[t1(3),rho(3)] = DESPOT1(abs(Aew),fa,tr,'b1',b1);
+% % estimate proton density of each pool based on MC-T2s fitting
+% rho = zeros(1,3);
+% t1 = zeros(1,3);
+% [t1(1),rho(1)] = DESPOT1(abs(Amw),fa,tr,'b1',b1);
+% [t1(2),rho(2)] = DESPOT1(abs(Aiw),fa,tr,'b1',b1);
+% [t1(3),rho(3)] = DESPOT1(abs(Aew),fa,tr,'b1',b1);
 
 % estimate proton density of total water using 1st echo
 [~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
@@ -476,17 +509,16 @@ if t10<0 || t10>3000e-3
     t10=1000e-3;
 end
 
-Amw0   = rho(1)./sum(rho)*rho0; 	Amwlb   = 0;        Amwub   = 2*rho0;
-Aiw0   = rho(2)./sum(rho)*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
-Aew0   = rho(3)./sum(rho)*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
+% Amw0   = rho(1)./sum(rho)*rho0; 	Amwlb   = 0;        Amwub   = 2*rho0;
+% Aiw0   = rho(2)./sum(rho)*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
+% Aew0   = rho(3)./sum(rho)*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
+Amw0   = 0.1*sum(rho0); 	Amwlb   = 0;        Amwub   = 2*rho0;
+Aiw0   = 0.6*sum(rho0); 	Aiwlb   = 0;        Aiwub   = 2*rho0;
+Aew0   = 0.3*sum(rho0); 	Aewlb   = 0;        Aewub   = 2*rho0;
 if isInvivo
     % common initial guesses for in vivo study
-    t1s0   = 118e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
-    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 3000e-3;
-%     t1s0   = t1(1);         t1slb   = 50e-3;  	t1sub   = 650e-3;
-%     t1l0   = mean(t1(2:3)); t1llb   = 500e-3; 	t1lub   = 3000e-3;
-%     t1s0   = 500e-3;         t1slb   = 50e-3;  	t1sub   = 650e-3;
-%     t1l0   = 3; t1llb   = 500e-3; 	t1lub   = 3000e-3;
+    t1s0   = 118e-3;  	t1slb   = 25e-3;  	t1sub   = 650e-3;
+    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 4000e-3;
     kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
 
 else
@@ -509,8 +541,8 @@ if numMagn==numel(te) % magnitude fitting
     end
     
 else    % other fittings
-    totalField0 = estimates(3*nfa+7:4*nfa+6).';	totalFieldlb   = estimates(3*nfa+7:4*nfa+6).'-100;	totalFieldub    = estimates(3*nfa+7:4*nfa+6).'+100;
-    pini0       = estimates(4*nfa+7:end).';   	pinilb         = ones(size(pini0))*(-2*pi);         piniub          = ones(size(pini0))*2*pi;
+    totalField0 = totalField(:).';	totalFieldlb   = totalField(:).'-100;	totalFieldub    = totalField(:).'+100;
+    pini0       = pini(:).';   	pinilb         = ones(size(pini0))*(-2*pi);         piniub          = ones(size(pini0))*2*pi;
     
     if strcmpi(model,'epgx')
         % set initial guess and fitting boundaries
@@ -570,29 +602,31 @@ function err = CostFunc_vfa(x,s,fa,te,tr,b1,t2s,freq,npulse,RFphi0,T3D_all,numMa
 % fixed parameters
 t2smw=t2s(1); t2siw=t2s(2); t2sew=t2s(3);
 fmw=freq(1);   fiw=freq(2); 
+if length(freq) < 3
+    few = 0; 
+else
+    few=freq(3); 
+end
+if strcmpi(model,'epgx')
+    kls=x(6);
+else
+    kls = 0;
+end
 
 % fitting parameters
 Amw=x(1);   Aiw=x(2);   Aew=x(3);
 t1s=x(4);   t1l=x(5);
  
-if numMagn==numel(te) % magnitude fitting
-    few = 0;        
-    if strcmpi(model,'epgx')
-        kls=x(6);
-    else
-        kls = 0;
-    end
+if numMagn==numel(te) % magnitude fitting      
     % no initial phase 
     pini=0;
     totalfield = 0;
+    
 else    % other fittings
-    few=freq(3);      
     if strcmpi(model,'epgx')
-        kls=x(6);
         totalfield = x(7:7+length(fa)-1);
         pini       = x(7+length(fa):end);
     else
-        kls=0;
         totalfield = x(6:6+length(fa)-1);
         pini       = x(6+length(fa):end);
     end
@@ -623,8 +657,9 @@ if isWeighted
     % compute the cost with weights
     err = computeFiter(s,sHat,numMagn,w);
 else
+    w = sqrt(ones(size(s))/numel(s));
     % compute the cost without weights
-    err = computeFiter(s,sHat,numMagn);
+    err = computeFiter(s,sHat,numMagn,w);
 end
 
 % residual normalied by measured signal
@@ -694,8 +729,11 @@ end
 % check function tolerance
 try
     algoPara2.fcnTol = algoPara.fcnTol;
+    if numel(algoPara2.fcnTol) == 1
+        algoPara2.fcnTol(2) = algoPara2.fcnTol;
+    end
 catch
-    algoPara2.fcnTol = 1e-5;
+    algoPara2.fcnTol(1:2) = 1e-5;
 end
 % check parallel computing 
 try
@@ -712,31 +750,53 @@ end
 % check method for weighting
 try
     algoPara2.isWeighted = algoPara.isWeighted;
+    if numel(algoPara2.isWeighted) == 1
+        algoPara2.isWeighted(2) = algoPara2.isWeighted;
+    end
 catch
-    algoPara2.isWeighted = false;
+    algoPara2.isWeighted(1:2) = false;
 end
 % check # of phase-corrupted echoes
 try
     algoPara2.numMagn = algoPara.numMagn;
+    if numel(algoPara2.numMagn) == 1
+        algoPara2.numMagn(2) = algoPara2.numMagn;
+    end
 catch
-    algoPara2.numMagn = numel(imgPara.te);
+    algoPara2.numMagn(1:2) = numel(imgPara.te);
 end
 % check user bounds and initial guesses
 try
-    algoPara2.userDefine.x0 = algoPara.userDefine.x0;
+    algoPara2.userDefine(1).x0 = algoPara.userDefine(1).x0;
 catch
-    algoPara2.userDefine.x0 = [];
+    algoPara2.userDefine(1).x0 = [];
 end
 try
-    algoPara2.userDefine.lb = algoPara.userDefine.lb;
+    algoPara2.userDefine(1).lb = algoPara.userDefine(1).lb;
 catch
-    algoPara2.userDefine.lb = [];
+    algoPara2.userDefine(1).lb = [];
 end
 try
-    algoPara2.userDefine.ub = algoPara.userDefine.ub;
+    algoPara2.userDefine(1).ub = algoPara.userDefine(1).ub;
 catch
-    algoPara2.userDefine.ub = [];
+    algoPara2.userDefine(1).ub = [];
 end
+try
+    algoPara2.userDefine(2).x0 = algoPara.userDefine(2).x0;
+catch
+    algoPara2.userDefine(2).x0 = [];
+end
+try
+    algoPara2.userDefine(2).lb = algoPara.userDefine(2).lb;
+catch
+    algoPara2.userDefine(2).lb = [];
+end
+try
+    algoPara2.userDefine(2).ub = algoPara.userDefine(2).ub;
+catch
+    algoPara2.userDefine(2).ub = [];
+end
+
 % check initial guesses
 try
     imgPara2.isInvivo = imgPara.isInvivo;

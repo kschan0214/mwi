@@ -20,6 +20,7 @@ smw(kfa) = (Amy.*(1-E1my).*sind(fa))./(1-E1my.*cosd(fa));
 siw(kfa) = (Aax.*(1-E1ax).*sind(fa))./(1-E1ax.*cosd(fa));
 sew(kfa) = (Aex.*(1-E1ex).*sind(fa))./(1-E1ex.*cosd(fa));
 end
+figure(51)
 subplot(131);plot(smw./(smw+siw+sew),'x-');title('MWF');xlabel('FA');ylabel('%');
 subplot(132);plot(siw./(smw+siw+sew),'x-');title('IWF');xlabel('FA');
 subplot(133);plot(sew./(smw+siw+sew),'x-');title('EWF');xlabel('FA');

@@ -75,6 +75,7 @@ t1x = [t1l, t1s];
 t2x = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
 fx = Amw/(Aiw+Aew+Amw); % mwf
 fs = (fmw-fiw); % frequency difference between long and short T1 compartments
+% fs = (fmw-(fiw*Aiw+few*Aew)/(Aiw+Aew)); % frequency difference between long and short T1 compartments
 nfa=length(fa);
 SF = zeros(nfa,2);
 for ii=1:nfa

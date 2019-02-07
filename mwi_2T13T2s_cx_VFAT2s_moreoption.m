@@ -262,14 +262,14 @@ end
 
 if isInvivo
     % common initial guesses for in vivo study
-    Amw0   = 0.1*rho0; 	Amwlb   = 0;        Amwub   = 1*rho0;
-    Aiw0   = 0.6*rho0; 	Aiwlb   = 0;        Aiwub   = 1*rho0;
-    Aew0   = 0.3*rho0; 	Aewlb   = 0;        Aewub   = 1*rho0;
+    Amw0   = 0.1*rho0; 	Amwlb   = 0;        Amwub   = 2*rho0;
+    Aiw0   = 0.6*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
+    Aew0   = 0.3*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
     t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 25e-3;
-    t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 200e-3;
-    t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 200e-3;
+    t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 500e-3;
+    t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 500e-3;
     t1s0   = 300e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
-    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 3000e-3;
+    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 5000e-3;
     kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
 
 else
