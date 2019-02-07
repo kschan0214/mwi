@@ -14,11 +14,17 @@
 % Date last modified:
 %
 %
-function mwf = ComputeMWF(fitRes)
+function [mwf,wf] = ComputeMWF(fitRes)
 
 mwf = (fitRes.estimates(:,:,:,1)) ./ sum(fitRes.estimates(:,:,:,1:3),4);
 
 mwf(isnan(mwf)) = 0;
 mwf(isinf(mwf)) = 0;
+
+iwf = (fitRes.estimates(:,:,:,2)) ./ sum(fitRes.estimates(:,:,:,1:3),4);
+ewf = (fitRes.estimates(:,:,:,3)) ./ sum(fitRes.estimates(:,:,:,1:3),4);
+wf.mwf = mwf;
+wf.iwf = iwf;
+wf.ewf = ewf;
 
 end
