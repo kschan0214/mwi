@@ -54,7 +54,6 @@ DEBUG   = algoPara.DEBUG;
 verbose = algoPara.verbose;
 
 % capture all fitting settings
-npulse       = algoPara.npulse;
 maxIter      = algoPara.maxIter;
 fcnTol       = algoPara.fcnTol;
 numMagn      = algoPara.numMagn;
@@ -63,8 +62,6 @@ weightMethod = algoPara.weightMethod;
 userDefine   = algoPara.userDefine;
 isParallel   = algoPara.isParallel;
 isInvivo     = algoPara.isInvivo;
-model        = algoPara.model;
-RFphi        = algoPara.RFphi;
 
 % check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
@@ -98,20 +95,7 @@ if verbose
     disp('The following fitting parameters are used:');
     fprintf('Max. iterations = %i\n',maxIter);
     fprintf('Function tolerance = %e\n',fcnTol);
-    
-    switch model
-        case 'epgx'
-            fprintf('Model: EPG-X\n');
-            fprintf('No. of pulses for EPG-X = %i\n',npulse);
-            
-        case 'epg'
-            fprintf('Model: traditional EPG\n');
-            fprintf('No. of pulses for EPG = %i\n',npulse);
-            
-        case 'standard'
-            fprintf('Model: Standard\n');
-            
-    end
+   
     
     if isWeighted(1)
         disp('MC-T2* fitting: Weighted cost function: True');
@@ -266,7 +250,7 @@ else
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
                     [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn(1),isWeighted(1),weightMethod,isInvivo,userDefine(1),options_step1,DEBUG);
-                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn(2),isWeighted(2),weightMethod,isInvivo,model,userDefine(2),options_step2,DEBUG);
+                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),numMagn(2),isWeighted(2),weightMethod,isInvivo,userDefine(2),options_step2,DEBUG);
                 end
             end
             if mod(ky,5) == 0;
@@ -310,7 +294,7 @@ if isInvivo
     Aew0   = 0.3*abs(s(:,1)).';	Aewlb   = zeros(1,size(s,1));	Aewub   = 2*s0;
     t2smw0 = 10e-3;            	t2smwlb = 1e-3;               	t2smwub = 25e-3;
     t2siw0 = 64e-3;            	t2siwlb = 25e-3;                t2siwub = 200e-3;
-    t2sew0 = 48e-3;           	t2sewlb = 25e-3;                t2sewub = 200e-3;
+    t2sew0 = 192e-3;           	t2sewlb = 0e-3;                t2sewub = 400e-3;
     
 else
     % common initial guesses for ex vivo study
@@ -374,8 +358,10 @@ function err = CostFunc_t2s(x,s,te,numMagn,isWeighted,weightMethod,DEBUG)
 nfa = size(s,1);
 % capture all fitting parameters
 Amw=x(1:nfa);       Aiw=x(nfa+1:2*nfa);	Aew=x(2*nfa+1:3*nfa);
-t2smw=x(3*nfa+1);   t2siw=x(3*nfa+2);   t2sew=x(3*nfa+3);
+t2smw=x(3*nfa+1);   t2iw=x(3*nfa+2);   t2_prime=x(3*nfa+3);
 fmw=x(3*nfa+4);     fiw=x(3*nfa+5); 
+
+t2sew = 1/ (1/t2iw+1/t2_prime);
 
 if numMagn==numel(te) % magnitude fitting      
     % no initial phase 
@@ -390,7 +376,7 @@ end
 sHat = zeros(size(s));
 for kfa = 1:nfa
     sHat(kfa,:) = mwi_model_3cc_nam2015(te,Amw(kfa),Aiw(kfa),Aew(kfa),...
-                                           t2smw,t2siw,t2sew,...
+                                           t2smw,t2iw,t2sew,...
                                            fmw+totalfield(kfa),fiw+totalfield(kfa),totalfield(kfa),pini(kfa));
 end
 
@@ -433,7 +419,7 @@ if DEBUG
     hold off;
     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
     text(te(1)/3,max(abs(s(:))*0.1),sprintf('t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f',...
-        t2smw,t2siw,t2sew,fmw,fiw));
+        t2smw,t2iw,t2sew,fmw,fiw));
     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
     subplot(212);plot(DEBUG_resnormAll);
     if length(DEBUG_resnormAll) <300
@@ -447,7 +433,7 @@ end
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel_vfa(s,fa,te,tr,b1,estimates,npulse,RFphi0,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
+function [x,res] = FitModel_vfa(s,fa,te,tr,b1,estimates,numMagn,isWeighted,weightMethod,isInvivo,userDefine,options,DEBUG)
 nfa = length(fa);
 % get T1w signal estimated from MC-T2s fitting
 Amw = estimates(1:nfa);
@@ -499,13 +485,13 @@ end
 Amw0   = 0.1*sum(rho0); 	Amwlb   = 0;        Amwub   = 2*rho0;
 Aiw0   = 0.6*sum(rho0); 	Aiwlb   = 0;        Aiwub   = 2*rho0;
 Aew0   = 0.3*sum(rho0); 	Aewlb   = 0;        Aewub   = 2*rho0;
-Ass0   = 0.24*sum(rho0); 	Asslb   = 0;        Assub   = 2*rho0;
+Ass0   = 0.2*sum(rho0); 	Asslb   = 0;        Assub   = 2*rho0;
 if isInvivo
     % common initial guesses for in vivo study
     t1s0   = 200e-3;  	t1slb   = 25e-3;  	t1sub   = 650e-3;
     t1l0   = 2;     	t1llb   = 500e-3; 	t1lub   = 4000e-3;
-    kowmw0    = 2;       	kowmwlb    = 0;      	kowmwub    = 6;       % exchange rate from long T1 to short T1
-    kmwss0    = 16;       	kmwsslb    = 0;      	kmwssub    = 60;       % exchange rate from long T1 to short T1
+    kowmw0    = 2;       	kowmwlb    = 0;      	kowmwub    = 60;       % exchange rate from long T1 to short T1
+    kmwss0    = 32;       	kmwsslb    = 0;      	kmwssub    = 60;       % exchange rate from long T1 to short T1
 
 else
     % common initial guesses for ex vivo study
@@ -554,14 +540,14 @@ end
 
 
 % run lsqnonlin!
-[x,res] = lsqnonlin(@(y)CostFunc_vfa(y,s,fa,te,tr,b1,t2s,freq,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc_vfa(y,s,fa,te,tr,b1,t2s,freq,numMagn,isWeighted,weightMethod,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc_vfa(x,s,fa,te,tr,b1,t2s,freq,numMagn,isWeighted,weightMethod,model,DEBUG)
+function err = CostFunc_vfa(x,s,fa,te,tr,b1,t2s,freq,numMagn,isWeighted,weightMethod,DEBUG)
 % fixed parameters
-t2smw=t2s(1); t2siw=t2s(2); t2sew=t2s(3);
+t2smw=t2s(1); t2siw=t2s(2); t2sew=1/ (1/t2siw+1/t2s(3));
 freqmw=freq(1);   freqiw=freq(2); 
 
 % fitting parameters
