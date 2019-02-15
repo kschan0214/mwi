@@ -1,4 +1,4 @@
-%% s = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmy,fax,fex,pini)
+%% s = mwi_model_3cc_nam2015(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini)
 %
 % Input (initial guess,[lb,ub])
 % --------------
@@ -9,9 +9,9 @@
 % t2smy         : myelin water T2*;                                  (10,[3,25])
 % t2sax         : axonal water T2*;                                  (64,[25,150])
 % t2sex         : extracellular water T2*;                           (48,[25,150])
-% fmybg         : myelin water frequency + background field;         (fbkg,[fbkg-75,fbkg+75]Hz)
-% faxbg         : axonal water frequency + background field;         (fbkg,[fbkg-25,fbkg+25]Hz)
-% fexbg         : exctracellular water frequency + background field; (fbkg,[fbkg-25,fbkg+25]Hz)
+% fmwbg         : myelin water frequency + background field;         (fbkg,[fbkg-75,fbkg+75]Hz)
+% fiwbg         : axonal water frequency + background field;         (fbkg,[fbkg-25,fbkg+25]Hz)
+% fbg           : background field;                                  (fbkg,[fbkg-25,fbkg+25]Hz)
 % pini          : initial phase introduced by B1+ phase offset;      (angle(S1),[-pi,pi])
 %
 % Output
@@ -40,14 +40,14 @@
 % Date last modified: 16 August 2018
 %
 %
-function s = mwi_model_3cc_nam2015(te,Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini)
+function s = mwi_model_3cc_nam2015(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini)
 
 if nargin < 10
     pini=0;
 end
 
-s = (Amy*exp(te*(-1/t2smy+1i*2*pi*fmybg)) + ...
-     Aax*exp(te*(-1/t2sax+1i*2*pi*faxbg)) + ...
-     Aex*exp(te*(-1/t2sex+1i*2*pi*fexbg)))*exp(-1i*pini);
+s = (Amw*exp(te*(-1/t2smw+1i*2*pi*fmwbg)) + ...
+     Aiw*exp(te*(-1/t2siw+1i*2*pi*fiwbg)) + ...
+     Aew*exp(te*(-1/t2sew+1i*2*pi*fbg)))*exp(-1i*pini);
 
 end

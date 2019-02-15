@@ -38,7 +38,7 @@
 function s = mwi_model_3T13T2scc_linearX(fa,te,tr,...
                                       Amw,Aiw,Aew,Ass,...
                                       t2smw,t2siw,t2sew,...
-                                      t1ss,t1w,...
+                                      t1mw,t1ow,t1ss,...
                                       kmwow,kmwss,...
                                       freqmw,freqiw,...
                                       totalfield,pini,b1)
@@ -66,16 +66,17 @@ M0mw = fmw;
 M0ss = fss;
 kowmw = (kmwss+kmwow) * M0mw/M0ow;
 kssmw = (kmwss+kmwow) * M0mw/M0ss;
-R1w = 1/t1w;
+R1ow = 1/t1ow;
+R1mw = 1/t1mw;
 R1ss = 1/t1ss;
 
 %%% Relaxation-exchange matrix for Longitudinal components
-Lambda_L = [[-R1w-kowmw kmwow 0];[kowmw -R1w-kmwow-kmwss kssmw];[0 kmwss -R1ss-kssmw]];
+Lambda_L = [[-R1ow-kowmw kmwow 0];[kowmw -R1mw-kmwow-kmwss kssmw];[0 kmwss -R1ss-kssmw]];
 Xi_L = expm(tr*Lambda_L);
 
 % Use same notation as paper
 I = eye(3);
-C_L = [R1w*M0ow;R1w*M0mw;R1ss*M0ss];
+C_L = [R1ow*M0ow;R1mw*M0mw;R1ss*M0ss];
     
 SF = zeros(nfa,3);
 for kfa = 1:length(fa)
