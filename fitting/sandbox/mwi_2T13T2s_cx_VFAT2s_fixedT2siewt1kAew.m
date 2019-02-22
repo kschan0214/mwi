@@ -36,7 +36,7 @@
 % Date last modified: 28 January 2019
 %
 %
-function fitRes = mwi_2T13T2s_cx_VFAT2s_fixedParameters(algoPara,imgPara)
+function fitRes = mwi_2T13T2s_cx_VFAT2s_fixedT2siewt1kAew(algoPara,imgPara)
 % make sure computeFiter in the same tool is used
 % addpath('utils/');
 
@@ -64,7 +64,6 @@ userDefine   = algoPara.userDefine;
 isParallel   = algoPara.isParallel;
 isInvivo     = algoPara.isInvivo;
 model        = algoPara.model;
-isFitTotalField        = algoPara.isFitTotalField;
 
 % check the user weighting method matches the available one or not
 if strcmpi(weightMethod,'norm') && strcmpi(weightMethod,'1stEcho')
@@ -165,14 +164,18 @@ if ~DEBUG
     options.Display = 'off';
 end
 
-
-if numMagn==numel(te)   % magnitude fitting has 11 estimates
-    estimates = zeros(ny,nx,nz,8);
-else
-    if isFitTotalField
-        estimates = zeros(ny,nx,nz,9+nfa*2); % others have 12 estimates
+if strcmpi(model,'epgx')
+    % EPG-X has an extra exchange term
+    if numMagn==numel(te)   % magnitude fitting has 11 estimates
+        estimates = zeros(ny,nx,nz,7);
     else
-        estimates = zeros(ny,nx,nz,9+nfa); % others have 12 estimates
+        estimates = zeros(ny,nx,nz,7+nfa*2); % others have 12 estimates
+    end
+else
+    if numMagn==numel(te)   % magnitude fitting has 10 estimates
+        estimates = zeros(ny,nx,nz,10);
+    else
+        estimates = zeros(ny,nx,nz,11+nfa*2); % others have 12 estimates
     end
 end
 
@@ -225,7 +228,7 @@ else
                     b1 = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,isFitTotalField,model,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
             if mod(ky,5) == 0;
@@ -242,7 +245,7 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,fa,te,tr,b1,db0,pini,npulse,numMagn,isWeighted,weightMethod,isInvivo,isFitTotalField,model,userDefine,options,DEBUG)
+function [x,res] = FitModel(s,fa,te,tr,b1,db0,pini,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
 % define initial guesses
 % estimate rho0 of the first echo
 [~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
@@ -257,22 +260,17 @@ if t10<0 || t10>2000e-3
     t10=1000e-3;
 end
 
-% fixed parameters
-t2s = [64e-3,48e-3];
-kls = 2;
-fixParameters = [t2s,kls];
-
 if isInvivo
     % common initial guesses for in vivo study
     Amw0   = 0.1*rho0; 	Amwlb   = 0;        Amwub   = 2*rho0;
     Aiw0   = 0.6*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
     Aew0   = 0.3*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
     t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 25e-3;
-%     t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 500e-3;
-%     t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 500e-3;
+    t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 500e-3;
+    t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 500e-3;
     t1s0   = 300e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
     t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 5000e-3;
-%     kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+    kls0    = 2;       	klslb    = 0;      	klsub    = 10;       % exchange rate from long T1 to short T1
 
 else
     % common initial guesses for ex vivo study
@@ -280,52 +278,63 @@ else
     Aiw0   = 0.6*rho0;  Aiwlb   = 0;        Aiwub   = 1*rho0;
     Aew0   = 0.25*rho0; Aewlb   = 0;        Aewub   = 1*rho0;
     t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 20e-3;
-%     t2siw0 = 54e-3; 	t2siwlb = 20e-3;    t2siwub = 200e-3;
-%     t2sew0 = 38e-3; 	t2sewlb = 20e-3;    t2sewub = 200e-3;
+    t2siw0 = 54e-3; 	t2siwlb = 20e-3;    t2siwub = 200e-3;
+    t2sew0 = 38e-3; 	t2sewlb = 20e-3;    t2sewub = 200e-3;
     t1s0   = 100e-3;  	t1slb   = 50e-3;  	t1sub   = 400e-3;
     t1l0   = t10;     	t1llb   = 300e-3; 	t1lub   = 1500e-3;
-%     kls0   = 2;       	klslb   = 0;      	klsub   = 6;       % exchange rate from long T1 to short T1
+    kls0   = 2;       	klslb   = 0;      	klsub   = 10;       % exchange rate from long T1 to short T1
     
 end
 
-% basic parameters
-fmw0   = 5;  	fmwlb   = -75;      fmwub   = 75;
-fiw0   = 0;  	fiwlb   = -25;  	fiwub   = 25;
-% set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t1s0 ,t1l0 ,fmw0 ,fiw0 ]);
-lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t1slb,t1llb,fmwlb,fiwlb]);
-ub = double([Amwub,Aiwub,Aewub,t2smwub,t1sub,t1lub,fmwub,fiwub]);
-
-if numMagn~=numel(te) % other fitting
-
-few0   = 0;  	fewlb   = -25;  	fewub   = 25;
-if isFitTotalField
+    fmw0   = 5;   	fmwlb   = -75;  	fmwub   = 75;
+    fiw0   = 0;    	fiwlb   = -25;      fiwub   = +25;
+if numMagn==numel(te) % magnitude fitting
+    
+    % set initial guess and fitting boundaries
+    x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0 ]);
+    lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb]);
+    ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,t1sub,t1lub,fmwub,fiwub]);
+    
+    if strcmpi(model,'epgx')
+        x0 = double([x0,kls0]);
+        lb = double([lb,klslb]);
+        ub = double([ub,klsub]);
+    end
+    
+else    % other fittings
     totalField0 = db0(:).';  totalFieldlb   = db0(:).'-100;                 totalFieldub    = db0(:).'+100;
-end
-pini0       = pini(:).'; pinilb         = ones(size(pini0))*(-2*pi);    piniub          = ones(size(pini0))*2*pi;
+    pini0       = pini(:).'; pinilb         = ones(size(pini0))*(-2*pi);    piniub          = ones(size(pini0))*2*pi;
+    
+    if strcmpi(model,'epgx')
+        % set initial guess and fitting boundaries
+%         x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0  ,kls0,totalField0,pini0]);
+%         lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb,klslb,totalFieldlb,pinilb]);
+%         ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,t1sub,t1lub,fmwub,fiwub,klsub,totalFieldub,piniub]);
+        x0 = double([Amw0 ,Aiw0  ,t2smw0 ,t2siw0,t1s0,fmw0 ,fiw0 ,totalField0,pini0]);
+        lb = double([Amwlb,Aiwlb,t2smwlb,t2siwlb,t1slb,fmwlb,fiwlb,totalFieldlb,pinilb]);
+        ub = double([Amwub,Aiwub,t2smwub,t2siwub,t1sub,fmwub,fiwub,totalFieldub,piniub]);
+    else
+        % set initial guess and fitting boundaries
+        x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0  ,totalField0,pini0]);
+        lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb,totalFieldlb,pinilb]);
+        ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,t1sub,t1lub,fmwub,fiwub,totalFieldub,piniub]);
 
-% set initial guess and fitting boundaries
-if isFitTotalField
-    x0 = double([x0,few0 ,totalField0,pini0]);
-    lb = double([lb,fewlb,totalFieldlb,pinilb]);
-    ub = double([ub,fewub,totalFieldub,piniub]);
-else
-    x0 = double([x0,few0 ,pini0]);
-    lb = double([lb,fewlb,pinilb]);
-    ub = double([ub,fewub,piniub]);
-end
+    end
     
 end
 
 
 % set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
+%     x0 = userDefine.x0;
     x0(~isnan(userDefine.x0)) = userDefine.x0(~isnan(userDefine.x0));
 end
 if ~isempty(userDefine.lb)
+%     lb = userDefine.lb;
     lb(~isnan(userDefine.lb)) = userDefine.lb(~isnan(userDefine.lb));
 end
 if ~isempty(userDefine.ub)
+%     ub = userDefine.ub;
     ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
 end
 
@@ -352,33 +361,43 @@ elseif strcmpi(model,'epg')
 end
 
 % run lsqnonlin!
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,fa,te,tr,b1,fixParameters,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,isFitTotalField,model,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,fa,te,tr,b1,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,fa,te,tr,b1,fixParameters,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,isFitTotalField,model,DEBUG)
+function err = CostFunc(x,s,fa,te,tr,b1,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG)
 % capture all fitting parameters
-Amw=x(1);   Aiw=x(2);   Aew=x(3);
-t2smw=x(4); 
-t1s=x(5);   t1l=x(6);
-fmw=x(7);   fiw=x(8);  
-t2siw=fixParameters(1); t2sew=fixParameters(2);
-kls = fixParameters(3);
+Amw=x(1);   Aiw=x(2);  
+t2smw=x(3); t2siw=x(4); t2sew=x(4);
+t1s=x(5); 
+fmw=x(6);   fiw=x(7);  
+
+few = 0; 
+t1l = 2.5;
+kls = 6;
+Aew = 0.5*Aiw;
 
 if numMagn==numel(te) % magnitude fitting
-    few = 0;        
+           
+%     if strcmpi(model,'epgx')
+%         kls=x(10);
+%     else
+%         kls = 0;
+%     end
     % no initial phase 
     pini=0;
     totalfield = 0;
 else    % other fittings
-    few=x(9);      
-    if isFitTotalField
-        totalfield = x(10:10+length(fa)-1);
-        pini       = x(10+length(fa):end);
+    
+    if strcmpi(model,'epgx')
+%         kls=x(10);
+        totalfield = x(8:8+length(fa)-1);
+        pini       = x(8+length(fa):end);
     else
-        pini       = x(10:10+length(fa)-1);
-        totalfield = zeros(size(pini));
+%         kls=0;
+%         totalfield = x(10:10+length(fa)-1);
+%         pini       = x(10+length(fa):end);
     end
 end
 
@@ -404,12 +423,12 @@ if isWeighted
 %             w = numel(s) * w(:)/sum(w(:));
             w = numel(s) * w/sum(w(:));
     end
+    % compute the cost with weights
+    err = computeFiter(s,sHat,numMagn,w);
 else
-    % compute the cost without weights (=same weights)
-    w = sqrt(ones(s)/numel(s));
-    
+    % compute the cost without weights
+    err = computeFiter(s,sHat,numMagn);
 end
-err = computeFiter(s,sHat,numMagn,w);
 
 % residual normalied by measured signal
 % 20180316 TODO:maybe for weighted cost there should be another way to do this 
@@ -523,13 +542,6 @@ catch
 end
 % check initial guesses
 try
-    imgPara2.isFitTotalField = imgPara.isFitTotalField;
-catch
-    imgPara2.isFitTotalField = true;
-end
-
-% check initial guesses
-try
     imgPara2.isInvivo = imgPara.isInvivo;
 catch
     imgPara2.isInvivo = true;
@@ -577,11 +589,5 @@ catch
     algoPara2.model = 'epgx';
 end
 
-
-try
-    algoPara2.isFitTotalField = algoPara.isFitTotalField;
-catch
-    algoPara2.isFitTotalField = true;
-end
 
 end

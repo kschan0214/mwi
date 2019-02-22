@@ -32,13 +32,17 @@
 function [ss,ss_pool] = mwi_model_ssSPGR_2T1(fa,tr,...
                                       M0r,M0f,...
                                       t1r,t1f,...
-                                      krf)
+                                      krf,kfr)
 
 % no. of flip angles
 nfa = length(fa);
 
 % derive the rest of the exchange rates
-kfr   = krf * M0r/M0f;
+if isempty(krf)
+    krf = kfr * M0f/M0r;
+else
+    kfr   = krf * M0r/M0f;
+end
 
 % convert T1s to R1s for simplicity
 R1r    = 1/t1r;
