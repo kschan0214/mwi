@@ -563,7 +563,7 @@ try
     imgPara2.fieldmap = imgPara.fieldmap;
     disp('Field map input: True');
 catch
-    imgPara2.fieldmap = zeros(size(imgPara2.mask));
+    imgPara2.fieldmap = zeros([size(imgPara2.mask) size(imgPara2.fa)]);
     disp('Field map input: False');
 end
 % check initial phase map
@@ -571,7 +571,7 @@ try
     imgPara2.pini = imgPara.pini;
     disp('Initial map input: True');
 catch
-    imgPara2.pini = zeros(size(imgPara2.mask));
+    imgPara2.pini = zeros([size(imgPara2.mask) size(imgPara2.fa)]);
     disp('Initial map input: False');
 end
 

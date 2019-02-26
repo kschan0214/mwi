@@ -373,12 +373,12 @@ if DEBUG
 end
 
 % run lsqnonlin!
-[x,res] = lsqnonlin(@(y)CostFunc_t2s(y,s,te,numMagn,isWeighted,weightMethod,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc_t2s(y,s,te,db0,numMagn,isWeighted,weightMethod,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc_t2s(x,s,te,numMagn,isWeighted,weightMethod,DEBUG)
+function err = CostFunc_t2s(x,s,te,db0,numMagn,isWeighted,weightMethod,DEBUG)
 nfa = size(s,1);
 % capture all fitting parameters
 Amw=x(1:nfa);       Aiw=x(nfa+1:2*nfa);	Aew=x(2*nfa+1:3*nfa);
@@ -432,6 +432,8 @@ end
 % residual normalied by measured signal
 % 20180316 TODO:maybe for weighted cost there should be another way to do this 
 err = err./norm(abs(s));
+% lambda = 0.1;
+% err = [err;lambda*(db0(:)-totalfield(:))];
 
 % if DEBUG then plots current fitting result
 if DEBUG
@@ -825,7 +827,7 @@ try
     imgPara2.fieldmap = imgPara.fieldmap;
     disp('Field map input: True');
 catch
-    imgPara2.fieldmap = zeros(size(imgPara2.mask));
+    imgPara2.fieldmap = zeros([size(imgPara2.mask) size(imgPara2.fa)]);
     disp('Field map input: False');
 end
 % check initial phase map
@@ -833,7 +835,7 @@ try
     imgPara2.pini = imgPara.pini;
     disp('Initial map input: True');
 catch
-    imgPara2.pini = zeros(size(imgPara2.mask));
+    imgPara2.pini = zeros([size(imgPara2.mask) size(imgPara2.fa)]);
     disp('Initial map input: False');
 end
 
