@@ -45,9 +45,9 @@
 % function s = mwi_model_ssSPGR_3T2scc_HCFM_MWFreq(te,A_mw,A_iw,A_ew,...
 %                                                     t2smw,t2siw,t2sew,...
 %                                                     freq_mw,param)
-function s = mwi_model_ssSPGR_3T2scc_HCFM_MWFreq(te,A_mw,A_iw,A_ew,...
-                                                    t2smw,t2fw,...
-                                                    freq_mw,param)
+function s = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,...
+                                             t2smw,t2fw,...
+                                             theta,param)
 gyro = 42.57747892;
                                      
 param = checkSetDefault(param);
@@ -60,8 +60,8 @@ rho_mw      = param.rho_mw;
 freq_bkg    = param.freq_bkg;
 pini        = param.pini;
 
-g = sqrt(A_iw/(A_iw+A_mw/rho_mw))
-fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2)
+g = sqrt(A_iw/(A_iw+A_mw/rho_mw));
+fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2);
 % s_iw = A_iw/0.91;
 % s_ew = A_ew/0.8;
 % s_mw = A_mw/0.37;
@@ -71,8 +71,12 @@ fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2)
 % coefficients, Eq.[A15]
 c1 = 1/4 - (3/2)*((g^2)/(1-g^2))*log(1/g);
 
+%
+sin2theta = sin(theta).^2;
 % analytical sine square theta
-sin2theta = ((2*freq_mw/(gyro*b0)-((2*x_i-x_a)/3+2*E))/(x_a*c1-x_i));
+% sin2theta = ((2*freq_mw/(gyro*b0)-((2*x_i-x_a)/3+2*E))/(x_a*c1-x_i));
+
+freq_mw = ((x_i/2)*(2/3-sin2theta) + (x_a/2)*(c1*sin2theta-1/3) + E) * gyro * b0;
 
 % analytical iw frequency
 freq_iw = (3/4)*x_a*log(1/g)*sin2theta*b0*gyro;
@@ -84,10 +88,6 @@ alpha = 3 / (abs(x_d)*2*pi*gyro*b0*sin2theta);
 D_E = zeros(size(te));
 D_E(te<=alpha) = (fvf/16) * (abs(x_d)*gyro*2*pi*b0*sin2theta*te(te<=alpha)).^2;
 D_E(te>alpha) = (fvf/2) * (abs(x_d)*gyro*2*pi*b0*sin2theta)*(te(te>alpha)-2/((abs(x_d)*gyro*2*pi*b0*sin2theta)));
-
-% s = (A_mw*exp(te*(-1/t2smw+1i*2*pi*(freq_mw+freq_bkg))) + ...
-%      A_iw*exp(te*(-1/t2siw+1i*2*pi*(freq_iw+freq_bkg))) + ...
-%      A_ew*exp(te*(-1/t2sew+1i*2*pi*freq_bkg)))*exp(-1i*pini);
 
 s = (A_mw*exp(te*(-1/t2smw+1i*2*pi*(freq_mw+freq_bkg))) + ...
      A_iw*exp(te*(-1/t2fw+1i*2*pi*(freq_iw+freq_bkg))) + ...
@@ -106,5 +106,7 @@ try param2.x_a = param.x_a;             catch; param2.x_a = -0.1;   end % ppm
 try param2.rho_mw = param.rho_mw;       catch; param2.rho_mw = 0.43; end % ratio
 try param2.freq_bkg = param.freq_bkg;	catch; param2.freq_bkg = 0; end % Hz
 try param2.pini = param.pini;           catch; param2.pini = 0;     end % rad
+try param2.g = param.g;           catch; param2.pini = 0;     end % rad
+try param2.fvf = param.pini;           catch; param2.pini = 0;     end % rad
 
 end

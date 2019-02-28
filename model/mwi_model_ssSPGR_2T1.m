@@ -1,8 +1,7 @@
-%% [ss,ss_pool] = mwi_model_ssSPGR_2T1_linear(fa,tr,...
+%% [ss,ss_pool] = mwi_model_ssSPGR_2T1(fa,tr,...
 %                                       M0r,M0f,...
 %                                       t1r,t1f,...
-%                                       krf,...
-%                                       b1)
+%                                       krf,kfr)
 %
 % Input
 % --------------
@@ -19,7 +18,8 @@
 % Output
 % --------------
 % ss            : total steady-state signal
-% ss_pool       : steady-state signal coming from each pool, [r,f]
+% ss_pool       : steady-state signal coming from each pool, 
+%                 1st dimension - [r,f]; 2nd dim - flip angle
 %
 % Description: Model based on Ou and Gochberg 2008 MRM
 %

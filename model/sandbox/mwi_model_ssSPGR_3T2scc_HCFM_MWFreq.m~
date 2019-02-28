@@ -60,8 +60,8 @@ rho_mw      = param.rho_mw;
 freq_bkg    = param.freq_bkg;
 pini        = param.pini;
 
-g = sqrt(A_iw/(A_iw+A_mw/rho_mw))
-fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2)
+g = sqrt(A_iw/(A_iw+A_mw/rho_mw));
+fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2);
 % s_iw = A_iw/0.91;
 % s_ew = A_ew/0.8;
 % s_mw = A_mw/0.37;
@@ -100,9 +100,9 @@ function param2 = checkSetDefault(param)
 param2 = param;
 
 try param2.b0 = param.b0;               catch; param2.b0 = 3;       end	% T
-try param2.E = param.E;                 catch; param2.E = 0.0;        end % ppm
-try param2.x_i = param.x_i;             catch; param2.x_i = -0.1;   end % ppm
-try param2.x_a = param.x_a;             catch; param2.x_a = -0.1;   end % ppm
+try param2.E = param.E;                 catch; param2.E = 0.02;        end % ppm
+try param2.x_i = param.x_i;             catch; param2.x_i = -0.06;   end % ppm
+try param2.x_a = param.x_a;             catch; param2.x_a = -0.12;   end % ppm
 try param2.rho_mw = param.rho_mw;       catch; param2.rho_mw = 0.43; end % ratio
 try param2.freq_bkg = param.freq_bkg;	catch; param2.freq_bkg = 0; end % Hz
 try param2.pini = param.pini;           catch; param2.pini = 0;     end % rad
