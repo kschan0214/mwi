@@ -204,7 +204,8 @@ else
     t2sax0 = 54;           	t2saxlb = 25;    t2saxub = 150;
     t2sex0 = 38;           	t2sexlb = 25;    t2sexub = 150;
 end
-    theta0 = pi/4;      thetalb = -pi; theta0ub = pi;
+%     theta0 = pi/4;      thetalb = -pi; theta0ub = pi;
+    sin2theta0 = 0.5;      sin2thetalb = 0; sin2theta0ub = 1;
 
 if numMagn==numel(te) % magnitude fitting
     fmy0   = 5;           	fmylb   = 5-75;  	fmyub   = 5+75;
@@ -226,9 +227,12 @@ else    % other fittings
 %     x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,fmy0,fbkg0,pini0]);
 %     lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,fmylb,fbkglb,pinilb]);
 %     ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,fmyub,fbkgub,piniub]);
-    x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,theta0,fbkg0,pini0]);
-    lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,thetalb,fbkglb,pinilb]);
-    ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,theta0ub,fbkgub,piniub]);
+%     x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,theta0,fbkg0,pini0]);
+%     lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,thetalb,fbkglb,pinilb]);
+%     ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,theta0ub,fbkgub,piniub]);
+    x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,sin2theta0,fbkg0,pini0]);
+    lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,sin2thetalb,fbkglb,pinilb]);
+    ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,sin2theta0ub,fbkgub,piniub]);
 end
 
 % set initial guess and fitting bounds here
@@ -255,7 +259,8 @@ function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
 A_mw=x(1);    A_iw=x(2);   A_ew=x(3);
 t2s_mw=x(4)*1e-3;  t2_fw=x(5)*1e-3; 
-theta=x(6); 
+% theta=x(6); 
+sin2theta=x(6); 
 
 if numMagn==numel(te) % magnitude fitting
     freq_bkg=0;        pini=0;
@@ -269,7 +274,7 @@ param.freq_bkg = freq_bkg;
 
 sHat = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,...
                                             t2s_mw,t2_fw,...
-                                            theta,param);
+                                            sin2theta,param);
 
 if size(sHat,1) ~= size(s,1)
     sHat = sHat.';

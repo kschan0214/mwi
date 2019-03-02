@@ -47,7 +47,7 @@
 %                                                     freq_mw,param)
 function s = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,...
                                              t2smw,t2fw,...
-                                             theta,param)
+                                             sin2theta,param)
 gyro = 42.57747892;
                                      
 param = checkSetDefault(param);
@@ -74,7 +74,7 @@ if isempty(fvf);    fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2); end
 c1 = 1/4 - (3/2)*((g^2)/(1-g^2))*log(1/g);
 
 %
-sin2theta = sin(theta).^2;
+% sin2theta = sin(theta).^2;
 % analytical sine square theta
 % sin2theta = ((2*freq_mw/(gyro*b0)-((2*x_i-x_a)/3+2*E))/(x_a*c1-x_i));
 
