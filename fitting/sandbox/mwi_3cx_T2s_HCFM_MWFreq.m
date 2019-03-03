@@ -74,6 +74,8 @@ end
 numMaskedVoxel = length(mask(mask==1));
 numFittedVoxel = 0;
 fprintf('%i voxles need to be fitted...\n',numMaskedVoxel);
+fprintf('Progress (percentgae): ');
+
 progress='';
 
 resnorm   = zeros(ny,nx,nz);
@@ -93,13 +95,12 @@ if isParallel
             tmp = mask(ky,:,kz);
             numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
             for ii=1:length(progress); fprintf('\b'); end
-            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            progress=sprintf('%0.1f', numFittedVoxel*100/numMaskedVoxel);
             fprintf(progress);
         end
     end
 else
     for kz=1:nz
-        fprintf('Processing slice %i\n',kz);
         for ky=1:ny
             for kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -114,7 +115,7 @@ else
             tmp = mask(ky,:,kz);
             numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
             for ii=1:length(progress); fprintf('\b'); end
-            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            progress=sprintf('%0.1f', numFittedVoxel*100/numMaskedVoxel);
             fprintf(progress);
         end
     end
