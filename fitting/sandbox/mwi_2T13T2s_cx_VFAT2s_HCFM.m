@@ -51,7 +51,6 @@ end
 
 % get debug mode and verbose
 DEBUG   = algoPara.DEBUG;
-verbose = algoPara.verbose;
 
 % capture all fitting settings
 npulse       = algoPara.npulse;
@@ -93,62 +92,7 @@ if isreal(data) && numMagn~=length(te)
     disp('Input data is real, switch to magnitude data fitting');
 end
 
-%%%%%%%%%% display fitting message %%%%%%%%%%
-if verbose
-    disp('The following fitting parameters are used:');
-    fprintf('Max. iterations = %i\n',maxIter);
-    fprintf('Function tolerance = %e\n',fcnTol);
-    
-    switch model
-        case 'epgx'
-            fprintf('Model: EPG-X\n');
-            fprintf('No. of pulses for EPG-X = %i\n',npulse);
-            
-        case 'epg'
-            fprintf('Model: traditional EPG\n');
-            fprintf('No. of pulses for EPG = %i\n',npulse);
-            
-        case 'standard'
-            fprintf('Model: Standard\n');
-            
-    end
-    
-    if isWeighted
-        disp('Weighted cost function: True');
-        disp(['Weighting method: ' weightMethod]);
-    else
-        disp('Weighted cost function: False');
-    end
-    if isInvivo
-        disp('Initial guesses for in vivo study');
-    else
-        disp('Initial guesses for ex vivo study');
-    end
-    % type of fitting
-    if numMagn==0
-        disp('Fitting complex model with complex data');
-    elseif numMagn==numel(te)
-        disp('Fitting complex model with magnitude data');
-    else
-        fprintf('Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
-    end
-    % initial guess and fitting bounds
-    if isempty(userDefine.x0)
-        disp('Default initial guess: True');
-    else
-        disp('Default initial guess: False');
-    end
-    if isempty(userDefine.lb)
-        disp('Default lower bound: True');
-    else
-        disp('Default lower bound: False');
-    end
-    if isempty(userDefine.ub)
-        disp('Default upper bound: True');
-    else
-        disp('Default upper bound: False');
-    end
-end
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 [ny,nx,nz,~,nfa] = size(data);
@@ -180,15 +124,14 @@ else
     end
 end
 
+numMaskedVoxel = length(mask(mask==1));
+numFittedVoxel = 0;
+fprintf('%i voxles need to be fitted...\n',numMaskedVoxel);
+progress='';
+
 resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
-        if verbose
-            fprintf('Processing slice %i...\n',kz);
-        end
-%         numVoxelToBeFitted = length(find(mask(:,:,kz)==1));
-%         fprintf('%i voxles need to be fitted...\n',numVoxelToBeFitted);
-%         fprintf('Progress (%%): ');
         for ky=1:ny
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -201,47 +144,39 @@ if isParallel
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,mcintra0,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
-%             if numVoxelToBeFitted > 0
-%                 numVoxelFitted = length(find(mask(1:ky,:,kz)==1));
-%                 percentFinish = floor(numVoxelFitted/numVoxelToBeFitted * 100);
-%                 if percentFinish>1
-%                   for j=0:log10(percentFinish-1)
-%                       fprintf('\b'); % delete previous counter display
-%                   end
-%                   fprintf('%% %i ',percentFinish);
-%                 end
-%             end
-            if mod(ky,5) == 0;
-                fprintf('%i ', ky);
-            end
+            % display progress
+            tmp = mask(ky,:,kz);
+            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
+            for ii=1:length(progress); fprintf('\b'); end
+            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            fprintf(progress);
+            
         end
-        fprintf('\n');
     end
 else
     for kz=1:nz
-        if verbose
-            fprintf('Processing slice %i\n',kz);
-        end
-%         for ky=1:ny
-        for ky=15
+        for ky=1:ny
             for kx=1:nx
                 if mask(ky,kx,kz)>0
                     % 1st dim: T1w; 2nd dim: T2*w
                     s = permute(data(ky,kx,kz,:,:),[5 4 1 2 3]);
                     b1 = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
-                    pini0   = squeeze(pini(ky,kx,kz));kx
-                    mcintra0 = mcintra(ky,kx,kz);ky
+                    pini0   = squeeze(pini(ky,kx,kz));
+                    mcintra0 = mcintra(ky,kx,kz);
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,mcintra0,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
-            if mod(ky,5) == 0;
-                fprintf('%i ', ky);
-            end
+            % display progress
+            tmp = mask(ky,:,kz);
+            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
+            for ii=1:length(progress); fprintf('\b'); end
+            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            fprintf(progress);
         end
-        fprintf('\n');
     end
 end
+fprintf('\n');
 
 fitRes.estimates = estimates;
 fitRes.resnorm   = resnorm;
@@ -526,85 +461,39 @@ imgPara2 = imgPara;
 algoPara2 = algoPara;
 isValid = true;
 
+
+%%%%%%%%%% 1. check algorithm parameters %%%%%%%%%%
+% check debug
+try algoPara2.DEBUG = algoPara.DEBUG;                   catch; algoPara2.DEBUG = false; end
+% check parallel computing 
+try algoPara2.isParallel = algoPara.isParallel;         catch; algoPara2.isParallel = false; end
+% check maximum iterations allowed
+try algoPara2.maxIter = algoPara.maxIter;               catch; algoPara2.maxIter = 500; end
+% check function tolerance
+try algoPara2.fcnTol = algoPara.fcnTol;                 catch; algoPara2.fcnTol = 1e-5; end
+% check weighted sum of cost function
+try algoPara2.weightMethod = algoPara.weightMethod;     catch; algoPara2.weightMethod = 'norm'; end
+% check method for weighting
+try algoPara2.isWeighted = algoPara.isWeighted;         catch; algoPara2.isWeighted = false; end
+% check # of phase-corrupted echoes
+try algoPara2.numMagn = algoPara.numMagn;               catch; algoPara2.numMagn = numel(imgPara.te); end
+% check initial guesses
+try algoPara2.isInvivo = algoPara2.isInvivo;            catch; algoPara2.isInvivo = true; end
+% check model
+try algoPara2.model = algoPara.model;                   catch; algoPara2.model = 'epgx'; end
+% check user bounds and initial guesses
+try algoPara2.userDefine.x0 = algoPara.userDefine.x0;   catch; algoPara2.userDefine.x0 = [];end
+try algoPara2.userDefine.lb = algoPara.userDefine.lb;   catch; algoPara2.userDefine.lb = [];end
+try algoPara2.userDefine.ub = algoPara.userDefine.ub;   catch; algoPara2.userDefine.ub = [];end
+
+%%%%%%%%%% 2. check data integrity %%%%%%%%%%
 % check if the number of flip angles matches with the data's 5th dim
 if length(imgPara.fa) ~= size(imgPara.img,5)
-    isValid = false;
+    error('The length of flip angle does not match with the last dimension of the image.');
 end
 % check if the number of echo times matches with the data's 4th dim
 if length(imgPara.te) ~= size(imgPara.img,4)
-    isValid = false;
-end
-
-% check debug
-try
-    algoPara2.DEBUG = algoPara.DEBUG;
-catch
-    algoPara2.DEBUG = false;
-end
-% check verbose
-try
-    algoPara2.verbose = algoPara.verbose;
-catch
-    algoPara2.verbose = true;
-end
-
-% check maximum iterations allowed
-try
-    algoPara2.maxIter = algoPara.maxIter;
-catch
-    algoPara2.maxIter = 500;
-end
-% check function tolerance
-try
-    algoPara2.fcnTol = algoPara.fcnTol;
-catch
-    algoPara2.fcnTol = 1e-5;
-end
-% check parallel computing 
-try
-    algoPara2.isParallel = algoPara.isParallel;
-catch
-    algoPara2.isParallel = false;
-end
-% check weighted sum of cost function
-try
-    algoPara2.weightMethod = algoPara.weightMethod;
-catch
-    algoPara2.weightMethod = 'norm';
-end
-% check method for weighting
-try
-    algoPara2.isWeighted = algoPara.isWeighted;
-catch
-    algoPara2.isWeighted = false;
-end
-% check # of phase-corrupted echoes
-try
-    algoPara2.numMagn = algoPara.numMagn;
-catch
-    algoPara2.numMagn = numel(imgPara.te);
-end
-% check user bounds and initial guesses
-try
-    algoPara2.userDefine.x0 = algoPara.userDefine.x0;
-catch
-    algoPara2.userDefine.x0 = [];
-end
-try
-    algoPara2.userDefine.lb = algoPara.userDefine.lb;
-catch
-    algoPara2.userDefine.lb = [];
-end
-try
-    algoPara2.userDefine.ub = algoPara.userDefine.ub;
-catch
-    algoPara2.userDefine.ub = [];
-end
-% check initial guesses
-try
-    imgPara2.isInvivo = imgPara.isInvivo;
-catch
-    imgPara2.isInvivo = true;
+    error('The length of TE does not match with the 4th dimension of the image.');
 end
 
 % check signal mask
@@ -640,13 +529,62 @@ catch
     disp('Initial map input: False');
 end
 
-try
-    algoPara2.model = algoPara.model;
-    if ~strcmpi(algoPara2.model,'epgx') && ~strcmpi(algoPara2.model,'epg') && ~strcmpi(algoPara2.model,'standard')
+%%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
+disp('The following fitting parameters are used:');
+switch model
+    case 'epgx'
+        fprintf('Model: EPG-X\n');
+        fprintf('No. of pulses for EPG-X = %i\n',npulse);
+
+    case 'epg'
+        fprintf('Model: EPG with no exchange\n');
+        fprintf('No. of pulses for EPG = %i\n',npulse);
+
+    case 'standard'
+        fprintf('Model: Standard\n');
+        
+    otherwise
         error('Your input model is not supported. Please choose either ''epgx'', ''epg'' or ''standard''. ');
-    end
-catch
-    algoPara2.model = 'epgx';
+        
+end
+
+fprintf('Max. iterations = %i\n',algoPara2.maxIter);
+fprintf('Function tolerance = %e\n',algoPara2.fcnTol);
+
+if algoPara2.isWeighted
+    disp('Weighted cost function: True');
+    disp(['Weighting method: ' algoPara2.weightMethod]);
+else
+    disp('Weighted cost function: False');
+end
+if algoPara2.isInvivo
+    disp('Initial guesses for in vivo study');
+else
+    disp('Initial guesses for ex vivo study');
+end
+% type of fitting
+if algoPara2.numMagn==0
+    disp('Fitting complex model with complex data');
+elseif algoPara2.numMagn==numel(imgPara2.te)
+    disp('Fitting complex model with magnitude data');
+else
+    fprintf('Fitting complex model with %i magnitude data and %i complex data\n',algoPara2.numMagn,numel(imgPara2.te)-algoPara2.numMagn);
+end
+% initial guess and fitting bounds
+if isempty(algoPara2.userDefine.x0)
+    disp('Default initial guess: True');
+else
+    disp('Default initial guess: False');
+end
+if isempty(algoPara2.userDefine.lb)
+    disp('Default lower bound: True');
+else
+    disp('Default lower bound: False');
+end
+if isempty(algoPara2.userDefine.ub)
+    disp('Default upper bound: True');
+else
+    disp('Default upper bound: False');
 end
 
 

@@ -71,10 +71,14 @@ else
     estimates = zeros(ny,nx,nz,8); % others have 8 estimates
 end
 
+numMaskedVoxel = length(mask(mask==1));
+numFittedVoxel = 0;
+fprintf('%i voxles need to be fitted...\n',numMaskedVoxel);
+progress='';
+
 resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
-        fprintf('Processing slice %i\n',kz);
         for ky=1:ny
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -85,6 +89,12 @@ if isParallel
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
+            % display progress
+            tmp = mask(ky,:,kz);
+            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
+            for ii=1:length(progress); fprintf('\b'); end
+            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            fprintf(progress);
         end
     end
 else
@@ -100,9 +110,16 @@ else
                     [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
+            % display progress
+            tmp = mask(ky,:,kz);
+            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
+            for ii=1:length(progress); fprintf('\b'); end
+            progress=sprintf('Progress (%%): %d', floor(numFittedVoxel*100/numMaskedVoxel));
+            fprintf(progress);
         end
     end
 end
+fprintf('\n');
 
 fitRes.estimates = estimates;
 fitRes.resnorm   = resnorm;
@@ -261,7 +278,7 @@ try algoPara2.userDefine.ub = algoPara.userDefine.ub;   catch; algoPara2.userDef
 %%%%%%%%%% 2. check data integrity %%%%%%%%%%
 % check if the number of echo times matches with the data
 if length(imgPara.te) ~= size(imgPara.img,4)
-    error('The length of TE does not match with the time dimension of the image.');
+    error('The length of TE does not match with the last dimension of the image.');
 end
 % check signal mask
 try
