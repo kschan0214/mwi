@@ -74,8 +74,7 @@ end
 numMaskedVoxel = length(mask(mask==1));
 numFittedVoxel = 0;
 fprintf('%i voxles need to be fitted...\n',numMaskedVoxel);
-fprintf('Progress (percentgae): ');
-
+fprintf('Progress (percent): ');
 progress='';
 
 resnorm   = zeros(ny,nx,nz);
@@ -355,13 +354,16 @@ function Debug_display(s,sHat,err,te,x,numMagn)
     figure(99);
 
     if numMagn==numel(te)
-        subplot(2,2,1);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]); title('Magnitude');
+        subplot(2,2,1);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([min(abs(s(:)))*0.9,max(abs(s(:)))*1.1]); title('Magnitude');
         plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
-        subplot(2,2,2); plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.'); title('residual');
+        subplot(2,2,2); 
+        plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.'); 
+        title('residual');
         ha = subplot(2,2,3); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
         uitable('Data',x(:),'Units',un,'Position',pos);
-        subplot(2,2,4);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
-        text(0.5,0.5,sprintf('resnorm=%f',sum(err(:).^2)),'Units','normalized');
+        subplot(2,2,4);
+        plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
+        text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
     else
         subplot(2,3,1);
         plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
@@ -380,12 +382,12 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         plot(te(:).',imag(permute(s,[2 1])),'ks-');
         plot(te(:).',real(permute(sHat(:),[2 1])),'bx-.');
         plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-.');hold off;
-        ylim([min([real(s(:));imag(s(:))])*1.1,max([real(s(:));imag(s(:))])*1.1]);
+        ylim([min([real(s(:));imag(s(:))]),max([real(s(:));imag(s(:))])*1.1]);
         title('Real, Imaginary');
         
         subplot(2,3,4);
-        plot(te(:).',real(permute(sHat(:),[2 1]))-real(permute(s(:),[2 1])),'rx-.');hold on;
-        plot(te(:).',imag(permute(sHat(:),[2 1]))-imag(permute(s(:),[2 1])),'r*-.');hold off;
+        plot(te(:).',real(permute(sHat(:)-s(:),[2 1])),'rx-.');hold on;
+        plot(te(:).',imag(permute(sHat(:)-s(:),[2 1])),'r*-.');hold off;
         title('Residual');
         
         ha = subplot(2,3,5); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
@@ -393,7 +395,7 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         
         subplot(2,3,6);
         plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
-        text(0.5,0.5,sprintf('resnorm=%f',sum(err(:).^2)),'Units','normalized');
+        text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
     end
     if length(DEBUG_resnormAll) <300
         xlim([0 300]);
