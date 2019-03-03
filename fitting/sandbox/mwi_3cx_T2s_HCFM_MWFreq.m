@@ -29,16 +29,10 @@
 function fitRes = mwi_3cx_T2s_HCFM_MWFreq(algoPara,imgPara)
 disp('Myelin water imaing: ME-T2* model');
 % check validity of the algorithm parameters and image parameters
-[algoPara,imgPara,isValid]=CheckAndSetPara(algoPara,imgPara);
-if ~isValid
-    fitRes = [];
-    disp('Invalid parameters');
-    return
-end
+[algoPara,imgPara]=CheckAndSetDefault(algoPara,imgPara);
 
-% get debug mode and verbose
+% get debug mode 
 DEBUG   = algoPara.DEBUG;
-verbose = algoPara.verbose;
 
 % capture all algorithm parameters
 numMagn    = algoPara.numMagn;
@@ -48,7 +42,6 @@ isWeighted = algoPara.isWeighted;
 isParallel = algoPara.isParallel;
 userDefine = algoPara.userDefine;
 isInvivo   = algoPara.isInvivo;
-% isROI      = algoPara.isROI; 
 
 % if DEBUG is on then disables parallel computing
 if DEBUG
@@ -61,83 +54,27 @@ mask  = imgPara.mask;
 fm    = imgPara.fieldmap;
 pini  = imgPara.pini;
 
-% for complex fitting we doubled the elements in the cost function
-% fcnTol = fcnTol./(2*numel(te)-numMagn);
-% fcnTol = fcnTol./(numel(te));
-% if numMagn~=numel(te)
-%     fcnTol = fcnTol*10;
-% end
-
-% display fitting message
-if verbose
-    disp('The following fitting parameters are used:');
-    fprintf('Max. iterations = %i\n',maxIter);
-    fprintf('Function tolerance = %e\n',fcnTol);
-    if isWeighted
-        disp('Cost function weighted by echo intensity: True');
-    else
-        disp('Cost function weighted by echo intensity: False');
-    end
-    
-    % type of fitting
-    if numMagn==0
-        disp('Fitting complex model with complex data');
-    elseif numMagn==numel(te)
-        disp('Fitting complex model with magnitude data');
-    else
-        fprintf('Fitting complex model with %i magnitude data and %i complex data\n',numMagn,numel(te)-numMagn);
-    end
-    
-    % initial guess and fitting bounds
-    if isempty(userDefine.x0)
-        disp('Default initial guess: True');
-    else
-        disp('Default initial guess: False');
-    end
-    if isempty(userDefine.lb)
-        disp('Default lower bound: True');
-    else
-        disp('Default lower bound: False');
-    end
-    if isempty(userDefine.ub)
-        disp('Default upper bound: True');
-    else
-        disp('Default upper bound: False');
-    end
-        
-    % initial guess for in-vivo case
-    if isInvivo
-        disp('Initial guesses for in vivo study');
-    else
-        disp('Initial guesses for ex vivo study');
-    end
-end
-
 [ny,nx,nz,~,~] = size(data);
 
+% set fitting options
 options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*15,...
     'StepTolerance',1e-6,'FunctionTolerance',fcnTol);
 
-% get the order of magnitude of signal
-% orderS = floor(log10(max(abs(data(:)))));
-% fdss = [10^(orderS-6),10^(orderS-6),10^(orderS-6),1e-8,1e-8,1e-8,1e-8,1e-8,1e-8],1e-8]];
-% options.FiniteDifferenceStepSize = fdss;
 if ~DEBUG
     options.Display = 'off';
 end
 
-if numMagn==numel(te)   % magnitude fitting has 8 estimates
-    estimates = zeros(ny,nx,nz,8);
+% create empty array for fitting results
+if numMagn==numel(te)   % magnitude fitting has 6 estimates
+    estimates = zeros(ny,nx,nz,6);
 else
-    estimates = zeros(ny,nx,nz,8); % others have 10 estimates
+    estimates = zeros(ny,nx,nz,8); % others have 8 estimates
 end
 
 resnorm   = zeros(ny,nx,nz);
 if isParallel
     for kz=1:nz
-        if verbose
-            fprintf('Processing slice %i\n',kz);
-        end
+        fprintf('Processing slice %i\n',kz);
         for ky=1:ny
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -152,9 +89,7 @@ if isParallel
     end
 else
     for kz=1:nz
-        if verbose
-            fprintf('Processing slice %i\n',kz);
-        end
+        fprintf('Processing slice %i\n',kz);
         for ky=1:ny
             for kx=1:nx
                 if mask(ky,kx,kz)>0
@@ -189,34 +124,32 @@ s0 = exp(b(1));
 if s0<0
     s0=0;
 end
-Amw0 = 0.1*abs(s(1));   Amwlb = 0;  Amwub = 2*abs(s0);
-Aiw0 = 0.6*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
-Aew0 = 0.3*abs(s(1));	Aewlb = 0;	Aewub = 2*abs(s0);        
+      
 % set initial guesses
 if isInvivo
     % in vivo reference
-    t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
-    t2sax0 = 64;           	t2saxlb = 25;    t2saxub = 150;
-    t2sex0 = 48;           	t2sexlb = 25;    t2sexub = 150;
+    Amw0    = 0.1*abs(s(1));    Amwlb      = 0;    Amwub    = 2*abs(s0);
+    Aiw0    = 0.6*abs(s(1));    Aiwlb      = 0;    Aiwub    = 2*abs(s0);
+    Aew0    = 0.3*abs(s(1));    Aewlb      = 0;    Aewub    = 2*abs(s0);  
+    t2smy0  = 10;               t2smylb    = 1;    t2smyub  = 25;
+    t2fw0   = 64;               t2fwlb     = 25;   t2fwub   = 150;
 else
     % ex vivo reference
+    Amw0 = 0.2*abs(s(1));   Amwlb = 0;  Amwub = 2*abs(s0);
+    Aiw0 = 0.6*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
+    Aew0 = 0.2*abs(s(1));	Aewlb = 0;	Aewub = 2*abs(s0);  
     t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
-    t2sax0 = 54;           	t2saxlb = 25;    t2saxub = 150;
-    t2sex0 = 38;           	t2sexlb = 25;    t2sexub = 150;
+    t2fw0 = 54;           	t2fwlb = 25;    t2fwub = 150;
 end
-%     theta0 = pi/4;      thetalb = -pi; theta0ub = pi;
-    sin2theta0 = 0.5;      sin2thetalb = 0; sin2theta0ub = 1;
+sin2theta0 = 0.5;      sin2thetalb = 0; sin2theta0ub = 1;
 
 if numMagn==numel(te) % magnitude fitting
-    fmy0   = 5;           	fmylb   = 5-75;  	fmyub   = 5+75;
-    fbkg0   = 0;          	fbkglb   = -25;      fbkgub   = +25;
-
     % set initial guess and fitting boundaries
-    x0 = double([Amy0,Aax0,Aex0,t2smy0,t2sax0,t2sex0,fmy0,fax0]);
-    lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2saxlb,t2sexlb,fmylb,faxlb]);
-    ub = double([Amyub,Aaxub,Aexub,t2smyub,t2saxub,t2sexub,fmyub,faxub]);
+    x0 = double([Amy0,Aax0,Aex0,t2smy0,t2fw0,sin2theta0]);
+    lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2fwlb,sin2thetalb]);
+    ub = double([Amyub,Aaxub,Aexub,t2smyub,t2fwub,sin2theta0ub]);
+    
 else    % other fittings
-    fmy0   = 5;          	fmylb   = -75; 	fmyub   = +75;
     fbkg0   = db0;          	fbkglb   = db0-25;  	fbkgub   = db0+25;
     if isnan(pini0)
         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
@@ -230,22 +163,19 @@ else    % other fittings
 %     x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,theta0,fbkg0,pini0]);
 %     lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,thetalb,fbkglb,pinilb]);
 %     ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,theta0ub,fbkgub,piniub]);
-    x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,sin2theta0,fbkg0,pini0]);
-    lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,sin2thetalb,fbkglb,pinilb]);
-    ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,sin2theta0ub,fbkgub,piniub]);
+    x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2fw0,sin2theta0,fbkg0,pini0]);
+    lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2fwlb,sin2thetalb,fbkglb,pinilb]);
+    ub = double([Amwub,Aiwub,Aewub,t2smyub,t2fwub,sin2theta0ub,fbkgub,piniub]);
 end
 
 % set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
-%     x0 = userDefine.x0;
     x0(~isnan(userDefine.x0)) = userDefine.x0(~isnan(userDefine.x0));
 end
 if ~isempty(userDefine.lb)
-%     lb = userDefine.lb;
     lb(~isnan(userDefine.lb)) = userDefine.lb(~isnan(userDefine.lb));
 end
 if ~isempty(userDefine.ub)
-%     ub = userDefine.ub;
     ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
 end
 
@@ -259,23 +189,24 @@ function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
 A_mw=x(1);    A_iw=x(2);   A_ew=x(3);
 t2s_mw=x(4)*1e-3;  t2_fw=x(5)*1e-3; 
-% theta=x(6); 
 sin2theta=x(6); 
 
-if numMagn==numel(te) % magnitude fitting
+if numMagn==numel(te) 
+    % magnitude fitting
     freq_bkg=0;        pini=0;
-else    % other fittings
+else
+    % other fittings
     freq_bkg=x(7);     pini=x(8);
 end
 
-param.b0 = 3;
-param.pini = pini;
-param.freq_bkg = freq_bkg;
+param.b0        = 3;
+param.pini      = pini;
+param.freq_bkg  = freq_bkg;
 
-sHat = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,...
-                                            t2s_mw,t2_fw,...
-                                            sin2theta,param);
+% simulate signal
+sHat = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,t2s_mw,t2_fw,sin2theta,param);
 
+% matching the size of simulated signal and the measured signal
 if size(sHat,1) ~= size(s,1)
     sHat = sHat.';
 end
@@ -286,18 +217,13 @@ if isWeighted
     w = sqrt(abs(s)/norm(abs(s(:))));
 else
     % compute the cost without weights (=same weights)
-    w = sqrt(ones(s)/numel(s));
+    w = sqrt(ones(size(s))/numel(s));
 end
 err = computeFiter(s,sHat,numMagn,w);
 
 % cost function is normalised with the norm of signal in order to provide
 % sort of consistence with fixed function tolerance
 err = err ./ norm(abs(s(:)));
-
-%%%%%%% TEST 20180307 %%%%%%%%
-% if numMagn==0
-%     err = err/2;
-% end
 
 % Debug module
 if DEBUG
@@ -307,90 +233,36 @@ end
 end
 
 %% check and set default
-function [algoPara2,imgPara2,isValid]=CheckAndSetPara(algoPara,imgPara)
+function [algoPara2,imgPara2]=CheckAndSetDefault(algoPara,imgPara)
 
 imgPara2 = imgPara;
 algoPara2 = algoPara;
-isValid = true;
 
+%%%%%%%%%% 1. check algorithm parameters %%%%%%%%%%
+% check debug
+try algoPara2.DEBUG = algoPara.DEBUG;                   catch; algoPara2.DEBUG = false; end
+% check parallel computing 
+try algoPara2.isParallel = algoPara.isParallel;         catch; algoPara2.isParallel = false; end
+% check maximum iterations allowed
+try algoPara2.maxIter = algoPara.maxIter;               catch; algoPara2.maxIter = 500; end
+% check function tolerance
+try algoPara2.fcnTol = algoPara.fcnTol;                 catch; algoPara2.fcnTol = 1e-6; end
+% check weighted sum of cost function
+try algoPara2.isWeighted = algoPara.isWeighted;         catch; algoPara2.isWeighted = true; end
+% check # of phase-corrupted echoes
+try algoPara2.numMagn = algoPara.numMagn;               catch; algoPara2.numMagn = numel(imgPara.te); end
+% check # of phase-corrupted echoes
+try algoPara2.isInvivo = algoPara.isInvivo;             catch; algoPara2.isInvivo = true; end
+% check user bounds and initial guesses
+try algoPara2.userDefine.x0 = algoPara.userDefine.x0;   catch; algoPara2.userDefine.x0 = [];end
+try algoPara2.userDefine.lb = algoPara.userDefine.lb;   catch; algoPara2.userDefine.lb = [];end
+try algoPara2.userDefine.ub = algoPara.userDefine.ub;   catch; algoPara2.userDefine.ub = [];end
+
+%%%%%%%%%% 2. check data integrity %%%%%%%%%%
 % check if the number of echo times matches with the data
 if length(imgPara.te) ~= size(imgPara.img,4)
-    isValid = false;
+    error('The length of TE does not match with the time dimension of the image.');
 end
-
-% check debug
-try
-    algoPara2.DEBUG = algoPara.DEBUG;
-catch
-    algoPara2.DEBUG = false;
-end
-% check verbose
-try
-    algoPara2.verbose = algoPara.verbose;
-catch
-    algoPara2.verbose = true;
-end
-
-% check maximum iterations allowed
-try
-    algoPara2.maxIter = algoPara.maxIter;
-catch
-    algoPara2.maxIter = 500;
-end
-% check parallel computing 
-try
-    algoPara2.isParallel = algoPara.isParallel;
-catch
-    algoPara2.isParallel = false;
-end
-% check function tolerance
-try
-    algoPara2.fcnTol = algoPara.fcnTol;
-catch
-    algoPara2.fcnTol = 1e-6;
-end
-% check weighted sum of cost function
-try
-    algoPara2.isWeighted = algoPara.isWeighted;
-catch
-    algoPara2.isWeighted = true;
-end
-
-% check ROI analysis
-try
-    algoPara2.isROI = algoPara.isROI;
-catch
-    algoPara2.isROI = false;
-end
-% check # of phase-corrupted echoes
-try
-    algoPara2.numMagn = algoPara.numMagn;
-catch
-    algoPara2.numMagn = numel(imgPara.te);
-end
-% check # of phase-corrupted echoes
-try
-    algoPara2.isInvivo = algoPara.isInvivo;
-catch
-    algoPara2.isInvivo = true;
-end
-% check user bounds and initial guesses
-try
-    algoPara2.userDefine.x0 = algoPara.userDefine.x0;
-catch
-    algoPara2.userDefine.x0 = [];
-end
-try
-    algoPara2.userDefine.lb = algoPara.userDefine.lb;
-catch
-    algoPara2.userDefine.lb = [];
-end
-try
-    algoPara2.userDefine.ub = algoPara.userDefine.ub;
-catch
-    algoPara2.userDefine.ub = [];
-end
-
 % check signal mask
 try
     imgPara2.mask = imgPara.mask;
@@ -416,50 +288,91 @@ catch
     disp('Initial phase input: False');
 end
 
+%%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
+disp('The following fitting parameters are used:');
+fprintf('Max. iterations = %i\n',algoPara2.maxIter);
+fprintf('Function tolerance = %e\n',algoPara2.fcnTol);
+if isWeighted
+    disp('Cost function weighted by echo intensity: True');
+else
+    disp('Cost function weighted by echo intensity: False');
+end
+% type of fitting
+if algoPara2.numMagn==0
+    disp('Fitting complex model with complex data');
+elseif algoPara2.numMagn==numel(imgPara2.te)
+    disp('Fitting complex model with magnitude data');
+else
+    fprintf('Fitting complex model with %i magnitude data and %i complex data\n',algoPara2.numMagn,numel(imgPara2.te)-algoPara2.numMagn);
+end
+% initial guess and fitting bounds
+if isempty(algoPara2.userDefine.x0)
+    disp('Default initial guess: True');
+else
+    disp('Default initial guess: False');
+end
+if isempty(algoPara2.userDefine.lb)
+    disp('Default lower bound: True');
+else
+    disp('Default lower bound: False');
+end
+if isempty(algoPara2.userDefine.ub)
+    disp('Default upper bound: True');
+else
+    disp('Default upper bound: False');
+end
+% initial guess for in-vivo case
+if algoPara2.isInvivo
+    disp('Initial guesses for in vivo study');
+else
+    disp('Initial guesses for ex vivo study');
+end
+    
 end
 
 %% Info display for debug mode
 function Debug_display(s,sHat,err,te,x,numMagn)
     global DEBUG_resnormAll
     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
-    figure(99);
+    f = figure(99);
 
     if numMagn==numel(te)
-        subplot(211);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]);
-        title('Magnitude');
-        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');
-        hold off;
-        text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-%         text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f',...
-%             Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg));
-        subplot(212);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
+        subplot(2,2,1);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([0,max(abs(s(:)))*1.1]); title('Magnitude');
+        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
+        subplot(2,2,2); plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.'); title('residual');
+        subplot(2,2,3); uitable(f,'Data',x(:)); 
+%         text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+        subplot(2,2,4);plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
     else
-        subplot(411);
+        subplot(2,3,1);
+        plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
+        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
+        ylim([0,max(abs(s(:)))*1.1]);
+        title('Magn.');
+        
+        subplot(2,3,2);
+        plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
+        plot(te(:).',angle(permute(sHat(:),[2 1])),'x-');hold off;
+        ylim([-pi pi]);
+        title('Phase');
+        
+        subplot(2,3,3);
         plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
         plot(te(:).',imag(permute(s,[2 1])),'ks-');
+        plot(te(:).',real(permute(sHat(:),[2 1])),'bx-.');
+        plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-.');hold off;
         ylim([min([real(s(:));imag(s(:))])*1.1,max([real(s(:));imag(s(:))])*1.1]);
-        title('Real and Imaginary');
-        subplot(412);plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
-        ylim([0,max(abs(s(:)))*1.1]);
-        title('Magnitude');
-        subplot(413);plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
-        ylim([-4 4]);
-        title('Phase');
-        subplot(411);
-        plot(te(:).',real(permute(sHat(:),[2 1])),'bx-');
-        plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-');
-        plot(te(:).',real(permute(sHat(:),[2 1]))-real(permute(s(:),[2 1])),'rx-.');
+        title('Real, Imaginary');
+        
+        subplot(2,3,4);
+        plot(te(:).',real(permute(sHat(:),[2 1]))-real(permute(s(:),[2 1])),'rx-.');hold on;
         plot(te(:).',imag(permute(sHat(:),[2 1]))-imag(permute(s(:),[2 1])),'r*-.');hold off;
-        subplot(412);
-        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-');
-        plot(te(:).',abs(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.');hold off;
-%         text(te(1)*0.5,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-%         text(te(1)*0.5,max(abs(s(:))*0.1),sprintf('Amy=%f,Aax=%f,Aex=%f,t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f,pini=%f',...
-%             Amy,Aax,Aex,t2smy,t2sax,t2sex,fmybg,faxbg,fexbg,pini));
-        subplot(413);
-        plot(te(:).',angle(permute(sHat(:),[2 1])),'x-');
-        plot(te(:).',angle(permute(s(:).*conj(sHat(:)),[2 1])),'ro-.');hold off;
-        subplot(414);
+        title('Residual');
+        
+        subplot(2,3,5);
+        uitable(f,'Data',x(:)); 
+        
+        subplot(2,3,6);
         plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
     end
     if length(DEBUG_resnormAll) <300
