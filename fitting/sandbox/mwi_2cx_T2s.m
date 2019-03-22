@@ -28,7 +28,7 @@
 % Date modified: 6 March 2019
 %
 %
-function fitRes = mwi_3cx_T2s(algoPara,imgPara)
+function fitRes = mwi_2cx_T2s(algoPara,imgPara)
 disp('Myelin water imaing: Multi-echo-T2* model');
 
 % check validity of the algorithm parameters and image parameters
@@ -91,11 +91,7 @@ if isParallel
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 else
@@ -111,11 +107,7 @@ else
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 end
@@ -135,67 +127,55 @@ if DEBUG
 end
 
 b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
+r2s = b(2);
 s0 = exp(b(1));
-b = [ones(length(te(ceil(end/2):end)),1), -te(ceil(end/2):end)]\log(abs(s(ceil(end/2):end))).';
-t2s = 1e3/b(2);
 if s0<0
     s0=0;
-end
-if t2s<35 || t2s>200 || t2s<0
-    t2s = 36;
 end
 
 % set initial guesses
 if isInvivo
     % in vivo reference
-    Amy0   = 0.1*abs(s(1));     Amylb   = 0;        Amyub   = 2*abs(s0);
-    Aax0   = 0.6*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
-    Aex0   = 0.3*abs(s(1));    	Aexlb   = 0;        Aexub   = 2*abs(s0);
-    t2smw0 = 10;            	t2smwlb = 1;        t2smwub = 25;
+    Amw0   = 0.1*abs(s(1));     Amwlb   = 0;        Amwub   = 2*abs(s0);
+    Aow0   = 0.9*abs(s(1));  	Aowlb   = 0;        Aowub   = 2*abs(s0);
+    r2smw0 = 100;            	r2smwlb = 40;        r2smwub = 500;
 %     t2siw0 = 64;                t2siwlb = 25;       t2siwub = 200;
-%     t2sew0 = 48;                t2sewlb = 25;       t2sewub = 200;
-    t2siw0 = t2s+10;                t2siwlb = t2s;       t2siwub = 200;
-    t2sew0 = t2s-10;                t2sewlb = 25;       t2sewub = t2s;
-%     t2smw0 = 1/10e-3;            	t2smwlb = 1/25e-3;        t2smwub = 1/1e-3;
-%     t2siw0 = 1/64e-3;                t2siwlb = 1/200e-3;       t2siwub = 1/25e-3;
-%     t2sew0 = 1/48e-3;                t2sewlb = 1/200e-3;       t2sewub = 1/25e-3;
+    r2sow0 = r2s;                r2sowlb = 5;       r2sowub = 40;
 else
     % ex vivo reference
-    Amy0   = 0.15*abs(s(1));    Amylb   = 0;        Amyub   = 2*abs(s0);
-    Aax0   = 0.65*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
-    Aex0   = 0.2*abs(s(1));    	Aexlb   = 0;        Aexub   = 2*abs(s0);
-    t2smw0 = 10;            	t2smwlb = 1;        t2smwub = 25;
-    t2siw0 = 54;                t2siwlb = 25;       t2siwub = 200;
-    t2sew0 = 38;                t2sewlb = 25;       t2sewub = 200;
+    Amw0   = 0.15*abs(s(1));    Amwlb   = 0;        Amwub   = 2*abs(s0);
+    Aow0   = 0.85*abs(s(1));  	Aowlb   = 0;        Aowub   = 2*abs(s0);
+    r2smw0 = 10;            	r2smwlb = 1;        r2smwub = 25;
+    r2sow0 = r2s;                r2sowlb = 25;       r2sowub = 200;
 end
     
 % set initial guess and fitting boundaries
-x0 = double([Amy0 ,Aax0 ,Aex0 ,t2smw0 ,t2siw0 ,t2sew0 ]);
-lb = double([Amylb,Aaxlb,Aexlb,t2smwlb,t2siwlb,t2sewlb]);
-ub = double([Amyub,Aaxub,Aexub,t2smwub,t2siwub,t2sewub]);
+x0 = double([Amw0 ,Aow0 ,r2smw0 ,r2sow0 ]);
+lb = double([Amwlb,Aowlb,r2smwlb,r2sowlb]);
+ub = double([Amwub,Aowub,r2smwub,r2sowub]);
 if numMagn==numel(te) % magnitude fitting
     fmwbg0   = 5;           fmwbglb   = -75;    fmwbgub   = 75;
-    fiwbg0   = 0;          	fiwbglb   = -25;    fiwbgub   = 25;
+%     fowbg0   = 0;          	fiwbglb   = -25;    fiwbgub   = 25;
 
     % extra parameters
-    x0 = double([x0 ,fmwbg0 ,fiwbg0]);
-    lb = double([lb,fmwbglb,fiwbglb]);
-    ub = double([ub,fmwbgub,fiwbgub]);
+%     x0 = double([x0 ,fmwbg0 ,fowbg0]);
+%     lb = double([lb,fmwbglb,fiwbglb]);
+%     ub = double([ub,fmwbgub,fiwbgub]);
+    x0 = double([x0 ,fmwbg0 ]);
+    lb = double([lb,fmwbglb]);
+    ub = double([ub,fmwbgub]);
 else    % other fittings
-    fmwbg0   = db0;         fmwbglb   = db0-75; 	fmwbgub   = db0+75;
-    fiwbg0   = db0;         fiwbglb   = db0-25;  	fiwbgub   = db0+25;
-%     fmwbg0   = 0;	fmwbglb   = -2; 	fmwbgub   = +20;
-%     fiwbg0   = -2;	fiwbglb   = -10;  	fiwbgub   = 0;
-    fbg0   = db0;          	fbglb     = db0-25;     fbgub     = db0+25;
+    fmwbg0   = db0+5;         fmwbglb   = db0-75; 	fmwbgub   = db0+75;
+    fowbg0   = db0;         fiwbglb   = db0-25;  	fiwbgub   = db0+25;
     if isnan(pini0)
         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
     end
     pinilb = -2*pi;         piniub=2*pi;
 
     % extra parameters
-    x0 = double([x0,fmwbg0,fiwbg0,fbg0,pini0]);
-    lb = double([lb,fmwbglb,fiwbglb,fbglb,pinilb]);
-    ub = double([ub,fmwbgub,fiwbgub,fbgub,piniub]);
+    x0 = double([x0,fmwbg0,fowbg0,pini0]);
+    lb = double([lb,fmwbglb,fiwbglb,pinilb]);
+    ub = double([ub,fmwbgub,fiwbgub,piniub]);
 end
 
 % set initial guess and fitting bounds here
@@ -221,19 +201,18 @@ end
 %% compute the cost function of the optimisation problem
 function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
-Amw=x(1);    Aiw=x(2);   Aew=x(3);
-t2smw=x(4)*1e-3;  t2siw=x(5)*1e-3; t2sew=x(6)*1e-3;
-% t2smw=1/x(4);  t2siw=1/x(5); t2sew=1/x(6);
-fmwbg=x(7);  fiwbg=x(8); 
+Amw=x(1);    Aow=x(2);
+t2smw=1/x(3);  t2siw=1/x(4);
+fmwbg=x(5);  
 if numMagn==numel(te) % magnitude fitting
-    fbg=0;        pini=0;
+    pini=0; fiwbg=0; 
 else    % other fittings
-    fbg=x(9);     pini=x(10);
+    pini=x(7); fiwbg=x(6); 
 end
-% fmwbg=fmwbg+fbg;  fiwbg=fiwbg+fbg; 
 
 % simulate signal based on parameter input
-sHat = mwi_model_3cc_nam2015(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini);
+sHat = mwi_model_2cc(te,Amw,Aow,t2smw,t2siw,fmwbg,fiwbg,pini);
+% sHat = mwi_model_3cc_nam2015(te,Amw,Aow,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini);
 
 if size(sHat,1) ~= size(s,1)
     sHat = sHat.';
@@ -364,7 +343,7 @@ else
 end
 
 % determine the number of estimates
-numEst = 8; % basic setting has 6 estimates
+numEst = 5; % basic setting has 6 estimates
 if algoPara2.numMagn~=numel(imgPara2.te)
     numEst = numEst + 2; % total field and inital phase
 end
@@ -428,4 +407,15 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
     end
     drawnow;
+end
+
+function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask)
+% number of non zeros element in the current mask
+numFittedVoxel = numFittedVoxel + nnz(mask);
+% delete previous progress
+for ii=1:length(progress)-1; fprintf('\b'); end
+% display current progress
+progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
+fprintf(progress);
+
 end

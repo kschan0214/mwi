@@ -28,7 +28,7 @@
 % Date modified: 6 March 2019
 %
 %
-function fitRes = mwi_3cx_T2s(algoPara,imgPara)
+function fitRes = mwi_3cx_T2s_multigrid(algoPara,imgPara)
 disp('Myelin water imaing: Multi-echo-T2* model');
 
 % check validity of the algorithm parameters and image parameters
@@ -54,21 +54,109 @@ mask  = imgPara.mask;
 fm    = imgPara.fieldmap;
 pini  = imgPara.pini;
 
-[ny,nx,nz,~,~] = size(data);
+if size(data,3) == 1
+    data_downsample = zeros(size(data,1)/2,size(data,1)/2,size(data,3),size(data,4));
+    kernel = [1 1;1 1];
+    h = fspecial('average',3);
+    for kt = 1:size(te)
+%         tmp = imfilter(data(:,:,:,kt),h,'same');
+        tmp = conv2(abs(data(:,:,:,kt)),kernel,'same');
+        tmp2 = conv2((data(:,:,:,kt)),kernel,'same');
+        data_downsample(:,:,:,kt) = tmp(1:2:end,1:2:end).*exp(1i*angle(tmp2(1:2:end,1:2:end)));
+    end
+    pini_downsample = imfilter(pini,h,'same');
+    pini_downsample = pini_downsample(1:2:end,1:2:end);
+    fm_downsample   = imfilter(fm,h,'same');
+    fm_downsample   = fm_downsample(1:2:end,1:2:end);
+    mask_downsample = mask(1:2:end,1:2:end);
+else
+    data_downsample = zeros(size(data,1)/2,size(data,1)/2,size(data,3)/2,size(data,4));
+    for kt = 1:size(te)
+        tmp = smooth3(data(:,:,:,kt),'box',3);
+        data_downsample(:,:,:,kt) = tmp(1:2:end,1:2:end,1:2:end);
+    end
+end
+
+
+[ny,nx,nz,~,~] = size(data_downsample);
+% [ny,nx,nz,~,~] = size(data);
 
 % set fitting options
 options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*numEst,...
     'StepTolerance',stepTol,'FunctionTolerance',fcnTol);
+options_grid1 = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*numEst,...
+    'StepTolerance',stepTol/10,'FunctionTolerance',fcnTol/10);
 
 if DEBUG
     % if DEBUG is on then disables parallel computing
     isParallel = false;
 else
     options.Display = 'off';
+    options_grid1.Display = 'off';
 end
 
 % create empty array for fitting results
-estimates = zeros(ny,nx,nz,numEst);
+estimates_grid1 = zeros(ny,nx,nz,numEst);
+% estimates = zeros(ny,nx,nz,numEst);
+
+numMaskedVoxel = length(mask(mask==1));
+numFittedVoxel = 0;
+fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
+progress='0 %%';
+fprintf('Progress: ');
+fprintf(progress);
+
+resnorm   = zeros(ny,nx,nz);
+if isParallel
+    for kz=1:nz
+        for ky=1:ny
+            parfor kx=1:nx
+                if mask_downsample(ky,kx,kz)>0
+                    % T2*w
+                    s       = permute(data_downsample(ky,kx,kz,:),[5 4 1 2 3]);
+                    db0     = fm_downsample(ky,kx,kz);
+                    pini0   = pini_downsample(ky,kx,kz);
+                    [estimates_grid1(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options_grid1,DEBUG);
+                end
+            end
+            % display progress
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
+        end
+    end
+else
+    for kz=1:nz
+        for ky=1:ny
+            for kx=1:nx
+                if mask_downsample(ky,kx,kz)>0
+                    % T2*w
+                    s       = permute(data_downsample(ky,kx,kz,:),[5 4 1 2 3]);
+                    db0     = fm_downsample(ky,kx,kz);
+                    pini0   = pini_downsample(ky,kx,kz);
+                    [estimates_grid1(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                end
+            end
+            % display progress
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
+        end
+    end
+end
+fprintf('\n');
+
+[X1,X2,X3] = ndgrid(1:2:size(data,1),1:2:size(data,2),1:2:size(data,3));
+[Xq1,Xq2,Xq3] = ndgrid(1:size(data,1),1:size(data,2),1:size(data,3));
+estimates_grid1_interp = zeros(size(data,1),size(data,2),size(data,3),size(estimates_grid1,4));
+for kest=1:size(estimates_grid1,4)
+    if size(data,3) == 1
+        estimates_grid1_interp(:,:,:,kest) = interpn(X1,X2,squeeze(estimates_grid1(:,:,:,kest)),Xq1,Xq2);
+    else
+        estimates_grid1_interp(:,:,:,kest) = interpn(X1,X2,X3,squeeze(estimates_grid1(:,:,:,kest)),Xq1,Xq2,Xq3);
+    end
+end
+
+
+[ny,nx,nz,~,~] = size(data);
+estimates_grid2 = zeros(ny,nx,nz,numEst);
+% estimates = zeros(ny,nx,nz,numEst);
 
 numMaskedVoxel = length(mask(mask==1));
 numFittedVoxel = 0;
@@ -85,17 +173,12 @@ if isParallel
                 if mask(ky,kx,kz)>0
                     % T2*w
                     s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
-                    db0     = fm(ky,kx,kz);
-                    pini0   = pini(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    estimates_grid1 = squeeze(estimates_grid1_interp(ky,kx,kz,:));
+                    [estimates_grid2(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel_grid2(s,te,estimates_grid1,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 else
@@ -104,24 +187,24 @@ else
             for kx=1:nx
                 if mask(ky,kx,kz)>0
                     % T2*w
-                    s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
-                    db0     = fm(ky,kx,kz);
-                    pini0   = pini(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    s       = permute(data_downsample(ky,kx,kz,:),[5 4 1 2 3]);
+                    db0     = fm_downsample(ky,kx,kz);
+                    pini0   = pini_downsample(ky,kx,kz);
+                    [estimates_grid1(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 end
-fprintf('\n');
 
-fitRes.estimates = estimates;
+
+
+
+
+
+fitRes.estimates = estimates_grid2;
 fitRes.resnorm   = resnorm;
 
 end
@@ -135,14 +218,10 @@ if DEBUG
 end
 
 b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
+% r2s(kx,ky,kz) = b(2);
 s0 = exp(b(1));
-b = [ones(length(te(ceil(end/2):end)),1), -te(ceil(end/2):end)]\log(abs(s(ceil(end/2):end))).';
-t2s = 1e3/b(2);
 if s0<0
     s0=0;
-end
-if t2s<35 || t2s>200 || t2s<0
-    t2s = 36;
 end
 
 % set initial guesses
@@ -152,10 +231,8 @@ if isInvivo
     Aax0   = 0.6*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
     Aex0   = 0.3*abs(s(1));    	Aexlb   = 0;        Aexub   = 2*abs(s0);
     t2smw0 = 10;            	t2smwlb = 1;        t2smwub = 25;
-%     t2siw0 = 64;                t2siwlb = 25;       t2siwub = 200;
-%     t2sew0 = 48;                t2sewlb = 25;       t2sewub = 200;
-    t2siw0 = t2s+10;                t2siwlb = t2s;       t2siwub = 200;
-    t2sew0 = t2s-10;                t2sewlb = 25;       t2sewub = t2s;
+    t2siw0 = 64;                t2siwlb = 25;       t2siwub = 200;
+    t2sew0 = 48;                t2sewlb = 25;       t2sewub = 200;
 %     t2smw0 = 1/10e-3;            	t2smwlb = 1/25e-3;        t2smwub = 1/1e-3;
 %     t2siw0 = 1/64e-3;                t2siwlb = 1/200e-3;       t2siwub = 1/25e-3;
 %     t2sew0 = 1/48e-3;                t2sewlb = 1/200e-3;       t2sewub = 1/25e-3;
@@ -184,13 +261,91 @@ if numMagn==numel(te) % magnitude fitting
 else    % other fittings
     fmwbg0   = db0;         fmwbglb   = db0-75; 	fmwbgub   = db0+75;
     fiwbg0   = db0;         fiwbglb   = db0-25;  	fiwbgub   = db0+25;
-%     fmwbg0   = 0;	fmwbglb   = -2; 	fmwbgub   = +20;
-%     fiwbg0   = -2;	fiwbglb   = -10;  	fiwbgub   = 0;
     fbg0   = db0;          	fbglb     = db0-25;     fbgub     = db0+25;
     if isnan(pini0)
         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
     end
     pinilb = -2*pi;         piniub=2*pi;
+
+    % extra parameters
+    x0 = double([x0,fmwbg0,fiwbg0,fbg0,pini0]);
+    lb = double([lb,fmwbglb,fiwbglb,fbglb,pinilb]);
+    ub = double([ub,fmwbgub,fiwbgub,fbgub,piniub]);
+end
+
+% set initial guess and fitting bounds here
+if ~isempty(userDefine.x0)
+    x0(~isnan(userDefine.x0)) = userDefine.x0(~isnan(userDefine.x0));
+end
+if ~isempty(userDefine.lb)
+    lb(~isnan(userDefine.lb)) = userDefine.lb(~isnan(userDefine.lb));
+end
+if ~isempty(userDefine.ub)
+    ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
+end
+
+if DEBUG
+    x0
+end
+
+% run fitting algorithm here
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
+
+end
+
+function [x,res] = FitModel_grid2(s,te,estimates,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
+if DEBUG
+    % if DEBUG then create an array to store resnorm of all iterations
+    global DEBUG_resnormAll
+    DEBUG_resnormAll=[];
+end
+
+b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
+% r2s(kx,ky,kz) = b(2);
+s0 = exp(b(1));
+if s0<0
+    s0=0;
+end
+
+% set initial guesses
+if isInvivo
+    % in vivo reference
+    Amy0   = estimates(1);     Amylb   = 0;        Amyub   = 2*abs(s0);
+    Aax0   = estimates(2);  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
+    Aex0   = estimates(3);    	Aexlb   = 0;        Aexub   = 2*abs(s0);
+    t2smw0 = estimates(4);            	t2smwlb = 1;        t2smwub = 25;
+    t2siw0 = estimates(5);                t2siwlb = 25;       t2siwub = 200;
+    t2sew0 = estimates(6);                t2sewlb = 25;       t2sewub = 200;
+%     t2smw0 = 1/10e-3;            	t2smwlb = 1/25e-3;        t2smwub = 1/1e-3;
+%     t2siw0 = 1/64e-3;                t2siwlb = 1/200e-3;       t2siwub = 1/25e-3;
+%     t2sew0 = 1/48e-3;                t2sewlb = 1/200e-3;       t2sewub = 1/25e-3;
+else
+    % ex vivo reference
+    Amy0   = 0.15*abs(s(1));    Amylb   = 0;        Amyub   = 2*abs(s0);
+    Aax0   = 0.65*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
+    Aex0   = 0.2*abs(s(1));    	Aexlb   = 0;        Aexub   = 2*abs(s0);
+    t2smw0 = 10;            	t2smwlb = 1;        t2smwub = 25;
+    t2siw0 = 54;                t2siwlb = 25;       t2siwub = 200;
+    t2sew0 = 38;                t2sewlb = 25;       t2sewub = 200;
+end
+    
+% set initial guess and fitting boundaries
+x0 = double([Amy0 ,Aax0 ,Aex0 ,t2smw0 ,t2siw0 ,t2sew0 ]);
+lb = double([Amylb,Aaxlb,Aexlb,t2smwlb,t2siwlb,t2sewlb]);
+ub = double([Amyub,Aaxub,Aexub,t2smwub,t2siwub,t2sewub]);
+if numMagn==numel(te) % magnitude fitting
+    fmwbg0   = estimates(7);           fmwbglb   = -75;    fmwbgub   = 75;
+    fiwbg0   = estimates(8);          	fiwbglb   = -25;    fiwbgub   = 25;
+
+    % extra parameters
+    x0 = double([x0 ,fmwbg0 ,fiwbg0]);
+    lb = double([lb,fmwbglb,fiwbglb]);
+    ub = double([ub,fmwbgub,fiwbgub]);
+else    % other fittings
+    fmwbg0   = estimates(7);         fmwbglb   = estimates(9)-75; 	fmwbgub   = estimates(9)+75;
+    fiwbg0   = estimates(8);         fiwbglb   = estimates(9)-25;  	fiwbgub   = estimates(9)+25;
+    fbg0   = estimates(9);          	fbglb     = estimates(9)-25;     fbgub     = estimates(9)+25;
+    pini0  = estimates(10); pinilb = -2*pi;         piniub=2*pi;
 
     % extra parameters
     x0 = double([x0,fmwbg0,fiwbg0,fbg0,pini0]);
@@ -230,7 +385,6 @@ if numMagn==numel(te) % magnitude fitting
 else    % other fittings
     fbg=x(9);     pini=x(10);
 end
-% fmwbg=fmwbg+fbg;  fiwbg=fiwbg+fbg; 
 
 % simulate signal based on parameter input
 sHat = mwi_model_3cc_nam2015(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini);
@@ -428,4 +582,15 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
     end
     drawnow;
+end
+
+function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask)
+% number of non zeros element in the current mask
+numFittedVoxel = numFittedVoxel + nnz(mask);
+% delete previous progress
+for ii=1:length(progress)-1; fprintf('\b'); end
+% display current progress
+progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
+fprintf(progress);
+
 end

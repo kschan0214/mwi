@@ -1,4 +1,4 @@
-%% fitRes = mwi_2T13T2s_cx_VFAT2s_HCFM(algoPara,imgPara)
+%% fitRes = mwi_2T13T2s_cx_VFAT2s(algoPara,imgPara)
 %
 % Input
 % --------------
@@ -32,17 +32,18 @@
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
-% Date created: 3 March 2019
-% Date last major modified:
+% Date created: 19 January 2018
+% Date last modified: 28 January 2019
+% Date last modified: 11 March 2019
 %
 %
-function fitRes = mwi_2T13T2s_cx_VFAT2s_HCFM(algoPara,imgPara)
-disp('Myelin water imaing: VFA-T2* model with HCFM prior');
+function fitRes = mwi_2T13T2s_cx_VFAT2s_moreoption(algoPara,imgPara)
+disp('Myelin water imaing: VFA-T2* model');
 
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara]=CheckAndSetDefault(algoPara,imgPara);
 
-% get debug mode and verbose
+% get debug mode
 DEBUG   = algoPara.DEBUG;
 
 % capture all fitting settings
@@ -60,6 +61,7 @@ isInvivo     = algoPara.isInvivo;
 model        = algoPara.model;
 numEst       = algoPara.numEst;
 
+
 % capture all images related data
 te    = imgPara.te;
 tr    = imgPara.tr;
@@ -69,7 +71,6 @@ mask  = imgPara.mask;
 b1map = imgPara.b1map;
 fm    = imgPara.fieldmap;
 pini  = imgPara.pini;
-intra = imgPara.intra;
 
 
 [ny,nx,nz,~,~] = size(data);
@@ -107,13 +108,12 @@ if isParallel
                     b1      = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = pini(ky,kx,kz);
-                    intra0  = intra(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,intra0,db0,pini0,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
             % display progress
             [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
-            
+
         end
     end
 else
@@ -126,8 +126,7 @@ else
                     b1 = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = pini(ky,kx,kz);
-                    intra0  = intra(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,intra0,db0,pini0,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
                 end
             end
             % display progress
@@ -144,14 +143,19 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,fa,te,tr,b1,intra0,db0,pini,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
+function [x,res] = FitModel(s,fa,te,tr,b1,db0,pini,RFphase,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG)
 % define initial guesses
 % estimate rho0 of the first echo
 [~,rho0] = DESPOT1(abs(s(:,1)),fa,tr,'b1',b1);
+% estimate t1 from later echo
+[t10,~] = DESPOT1(abs(s(:,end-3)),fa,tr,'b1',b1);
 
 % in case rho0 and t10 go wrong then use defualt values
 if rho0<0
     rho0=max(abs(s(:)));
+end
+if t10<0 || t10>2000e-3
+    t10=1000e-3;
 end
 
 if isInvivo
@@ -165,9 +169,11 @@ if isInvivo
 %     Amw0   = 0.3*rho0; 	Amwlb   = 0;        Amwub   = 2*rho0;
 %     Aiw0   = (6/9)*0.7*rho0; 	Aiwlb   = 0;        Aiwub   = 2*rho0;
 %     Aew0   = (3/9)*0.7*rho0; 	Aewlb   = 0;        Aewub   = 2*rho0;
-    t2smw0 = 10;        t2smwlb = 1;        t2smwub = 25;
-    t2fw0  = 64;        t2fwlb  = 25;       t2fwub  = 250;
+    t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 25e-3;
+    t2siw0 = 64e-3; 	t2siwlb = 25e-3;    t2siwub = 250e-3;
+    t2sew0 = 48e-3; 	t2sewlb = 25e-3;    t2sewub = 250e-3;
     t1s0   = 118e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
+    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = 5000e-3;
     kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
 
 else
@@ -175,42 +181,41 @@ else
     Amw0   = 0.15*rho0; Amwlb   = 0;        Amwub   = 1*rho0;
     Aiw0   = 0.6*rho0;  Aiwlb   = 0;        Aiwub   = 1*rho0;
     Aew0   = 0.25*rho0; Aewlb   = 0;        Aewub   = 1*rho0;
-    t2smw0 = 10;        t2smwlb = 1;        t2smwub = 20;
-    t2fw0  = 54;        t2fwlb  = 20;       t2fwub  = 200;
+    t2smw0 = 10e-3;     t2smwlb = 1e-3;     t2smwub = 20e-3;
+    t2siw0 = 54e-3; 	t2siwlb = 20e-3;    t2siwub = 200e-3;
+    t2sew0 = 38e-3; 	t2sewlb = 20e-3;    t2sewub = 200e-3;
     t1s0   = 100e-3;  	t1slb   = 50e-3;  	t1sub   = 400e-3;
+    t1l0   = t10;     	t1llb   = 300e-3; 	t1lub   = 1500e-3;
     kls0   = 2;       	klslb   = 0;      	klsub   = 6;       % exchange rate from long T1 to short T1
     
 end
-sin2theta0 = 0.5; sin2thetalb = 0; sin2thetaub = 1;
+fmw0   = 5;   	fmwlb   = 5-75;  	fmwub   = 5+75;
+fiw0   = 0;    	fiwlb   = -25;      fiwub   = +25;
 
 % set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,t2smw0 ,t2fw0 ,t1s0 ,sin2theta0 ]);
-lb = double([Amwlb,Aiwlb,t2smwlb,t2fwlb,t1slb,sin2thetalb]);
-ub = double([Amwub,Aiwub,t2smwub,t2fwub,t1sub,sin2thetaub]);
+x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,t1s0 ,t1l0 ,fmw0 ,fiw0 ]);
+lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,t1slb,t1llb,fmwlb,fiwlb]);
+ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,t1sub,t1lub,fmwub,fiwub]);
 
-% optional exchange term
 if strcmpi(model,'epgx')
     x0 = double([x0,kls0]);
     lb = double([lb,klslb]);
     ub = double([ub,klsub]);
 end
-% optional background fields and initial phase
-if numMagn~=numel(te) % other fittings
-      
-    totalField0 = db0(:).';  totalFieldlb   = db0(:).'-100;	totalFieldub    = db0(:).'+100;
-    pini0       = pini;      pinilb         = -2*pi;        piniub          = 2*pi;
     
-    x0 = double([x0,totalField0 ,pini0]);
+if numMagn~=numel(te) % other fittings
+    
+    totalField0 = db0(:).';  totalFieldlb   = db0(:).'-100;                 totalFieldub    = db0(:).'+100;
+    pini0       = pini; pinilb         = -2*pi;    piniub          = 2*pi;
+
+    % set initial guess and fitting boundaries
+    x0 = double([x0 ,totalField0,pini0]);
     lb = double([lb,totalFieldlb,pinilb]);
     ub = double([ub,totalFieldub,piniub]);
+
+end
     
-end
-% optional extracellular water signal
-if isnan(intra0)
-    x0 = [x0,Aew0];
-    lb = [lb,Aewlb];
-    ub = [ub,Aewub];
-end
+
 
 % set initial guess and fitting bounds here
 if ~isempty(userDefine.x0)
@@ -232,132 +237,70 @@ end
 
 % precompute EPG-X's transition matrix here for speed
 T3D_all = cell(length(fa),1);
-phiCycle = RF_phase_cycle(npulse,RFphase);
 if strcmpi(model,'epgx')
+    phiCycle = RF_phase_cycle(npulse,RFphase);
     for kfa=1:length(fa)
         T3D_all{kfa} = PrecomputeT(phiCycle,d2r(fa(kfa)*b1));
     end
-    
 elseif strcmpi(model,'epg')
+    phiCycle = RF_phase_cycle(npulse,RFphi0);
     for kfa=1:length(fa)
         T3D_all{kfa} = precomputeT_epg(phiCycle,d2r(fa(kfa)*b1));
     end
-    
 end
 
 % run lsqnonlin!
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,fa,te,tr,b1,intra0,npulse,RFphase,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,fa,te,tr,b1,npulse,RFphase,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,fa,te,tr,b1,intra,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG)
+function err = CostFunc(x,s,fa,te,tr,b1,npulse,RFphi0,T3D_all,numMagn,isWeighted,weightMethod,model,DEBUG)
 % capture all fitting parameters
-Amw=x(1);   Aiw=x(2);   
-t2smw=x(3)*1e-3; t2fw=x(4)*1e-3;
-t1s=x(5);   
-sin2theta = x(6);
+Amw=x(1);   Aiw=x(2);   Aew=x(3);
+t2smw=x(4); t2siw=x(5); t2sew=x(6);
+t1s=x(7);   t1l=x(8);
+fmw=x(9);   fiw=x(10);  
+few = 0; 
 if strcmpi(model,'epgx')
-    kls=x(7);
+    kls=x(11);
 else
     kls = 0;
 end
 
-if numMagn==numel(te) % magnitude fitting     
-    % initial phase and background field = 0
+
+if numMagn==numel(te) % magnitude fitting
+    % no initial phase 
     pini=0;
-    freq_bkg = zeros(length(fa));
+    totalfield = 0;
     
-else    % other fittings      
+else    % other fittings  
     if strcmpi(model,'epgx')
-        freq_bkg = x(8:8+length(fa)-1);
-        pini       = x(8+length(fa));
+        totalfield = x(12:12+length(fa)-1);
+        pini       = x(12+length(fa));
     else
-        freq_bkg = x(7:7+length(fa)-1);
-        pini       = x(7+length(fa));
+        totalfield = x(11:11+length(fa)-1);
+        pini       = x(11+length(fa));
     end
 end
 
-if ~isnan(intra)
-    Aew=Aiw*(1-intra)/intra;
-else
-    Aew=x(end);
-end
-%%%%%%%%%% 1. SPGR steady state %%%%%%%%%%
 % simulate signal based on parameter input
-%  [~,ssHat] = mwi_model_ssSPGR_2T1(fa*b1,tr,...
-%                                     Amw,Aiw+Aew,...
-%                                     t1s,t1l,...
-%                                     [],kls);
-
-rho_mw  = 0.43;
-x_i     = -0.1;
-x_a     = -0.1;
-E       = 0;
-b0      = 3;
-gyro    = 42.57747892;
-t1l     = 1.05;
-
-g   = sqrt(Aiw/(Aiw+Amw/rho_mw));
-if Aew == 0
-    fvf = 1;
-else
-    fvf = (Aiw/Aew)/((Aiw/Aew)+g.^2);
-end
-% coefficients, Eq.[A15]
-c1 = 1/4 - (3/2)*((g^2)/(1-g^2))*log(1/g);
-% myelin water frequency
-fs = ((x_i/2)*(2/3-sin2theta) + (x_a/2)*(c1*sin2theta-1/3) + E) * gyro * b0;
-% 
-phiCycle = RF_phase_cycle(npulse,RFphi0);
-t1x = [t1l, t1s]; 
-t2x = [t2fw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
-fx = Amw/(Aiw+Aew+Amw); % mwf
-ssHat = zeros(2,length(fa));
-for ii=1:length(fa) 
-    % Compute RF spoling phase cycles
-    % 2 pools, with exchange
-    % start with steady-state signals, transverse magnitisation
-    s1 = Signal_GRE_T1wMono((1-fx), fa(ii)*b1, t1x(1), tr);
-    s2 = Signal_GRE_T1wMono(fx, fa(ii)*b1, t1x(2), tr);
-    
-    % EPG-X core
-    z1 = s1/sind(fa(ii)*b1);    % long T1 compartment, longitudinal magnitisation (z-state)
-    z2 = s2/sind(fa(ii)*b1);    % short T1 compartment, longitudinal magnitisation (z-state)
-    tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,tr,t1x,t2x,fx,kls,'delta',fs,'kmax',10,'ss',[z1,z2]);
-    ssHat(1,ii) = (tmp{2}(end))*(Aiw+Aew+Amw);
-    ssHat(2,ii) = (tmp{1}(end))*(Aiw+Aew+Amw);
-     
-end                                           
-
-%%%%%%%%%% 2. T2* decay %%%%%%%%%%
-param.b0        = 3;
-param.pini      = pini;
-param.g         = g;
-param.fvf       = fvf;
-
-sHat = zeros(size(s));
-for kfa = 1:length(fa)
-    param.freq_bkg  = freq_bkg(kfa);
-    
-    sHat(kfa,:) = mwi_model_ssSPGR_3T2scc_HCFM(te,ssHat(1,kfa),ssHat(2,kfa)*(Aiw/(Aiw+Aew)),ssHat(2,kfa)*(Aew/(Aiw+Aew)),...
-                                     t2smw,t2fw,...
-                                     sin2theta,param);
-end
+% sHat = mwi_model_2T13T2scc_epgx(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,totalfield,pini,b1,kls,npulse,T3D_all);
+sHat = mwi_model_2T13T2scc_epgx_moreoption(fa,te,tr,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1s,t1l,fmw,fiw,few,totalfield,pini,b1,kls,npulse,RFphi0,T3D_all,model);
 
 % compute fitting residual
 if isWeighted
     switch weightMethod
         case 'norm'
+            % weights using echo intensity, as suggested in Nam's paper
             w = sqrt(abs(s)/sum(abs(s(:))));
-            
+
         case '1stEcho'
             % weights using the 1st echo intensity of each flip angle
             w = bsxfun(@rdivide,abs(s),abs(s(:,1)));
 %             w = numel(s) * w(:)/sum(w(:));
             w = numel(s) * w/sum(w(:));
     end
-    
 else
     % no weighting = same weighting
     w = sqrt(ones(size(s))/numel(s));
@@ -376,7 +319,7 @@ end
 
 end
 
-%% check and set default
+% check and set default
 function [algoPara2,imgPara2]=CheckAndSetDefault(algoPara,imgPara)
 % copy input to output
 imgPara2 = imgPara;
@@ -453,16 +396,6 @@ try
 catch
     imgPara2.pini = zeros(size(imgPara2.mask));
     disp('Initial map input: False');
-end
-% check intra-neurite volume fraction map
-try
-    imgPara2.intra = imgPara.intra;
-    isIntra = true;
-    disp('Intra-neurite volume fraction map input: True');
-catch
-    imgPara2.intra = ones(size(imgPara2.mask))*nan;
-    isIntra = false;
-    disp('Intra-neurite volume fraction map input: False');
 end
 
 % check input image is real or not
@@ -541,15 +474,12 @@ if strcmpi(algoPara2.weightMethod,'norm') && strcmpi(algoPara2.weightMethod,'1st
 end
 
 % determine the number of estimates
-numEst = 6; % basic setting has 6 estimates
+numEst = 10; % basic setting has 6 estimates
 if strcmpi(algoPara2.model,'epgx')
     numEst = numEst +1; % additional exchange term
 end
 if algoPara2.numMagn~=numel(imgPara2.te)
     numEst = numEst + length(imgPara2.fa) + 1; % total field and inital phase
-end
-if ~isIntra
-    numEst = numEst + 1; % optional extracellular water
 end
 algoPara2.numEst = numEst;
 

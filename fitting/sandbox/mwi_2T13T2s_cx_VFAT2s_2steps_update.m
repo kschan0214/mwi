@@ -216,9 +216,9 @@ else
 end
 
 if numMagn(1)==numel(te)   % magnitude fitting has 10 estimates
-    estimates_step1 = zeros(ny,nx,nz,nfa*3+5);
+    estimates_step1 = zeros(ny,nx,nz,nfa*2+6);
 else
-    estimates_step1 = zeros(ny,nx,nz,nfa*5+5);
+    estimates_step1 = zeros(ny,nx,nz,nfa*5-1);
 end
 
 resnorm_step1 = zeros(ny,nx,nz);
@@ -239,7 +239,8 @@ if isParallel
                     b1      = b1map(ky,kx,kz);
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,fa,te,tr,b1,db0,pini0,npulse,numMagn,isWeighted,weightMethod,isInvivo,model,userDefine,options,DEBUG);
+                    [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn(1),isWeighted(1),weightMethod,isInvivo,userDefine(1),options_step1,DEBUG);
+%                     [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn(2),isWeighted(2),weightMethod,isInvivo,model,userDefine(2),options_step2,DEBUG);
                 end
             end
 %             if numVoxelToBeFitted > 0
@@ -272,7 +273,7 @@ else
                     db0     = squeeze(fm(ky,kx,kz,:));
                     pini0   = squeeze(pini(ky,kx,kz,:));
                     [estimates_step1(ky,kx,kz,:),resnorm_step1(ky,kx,kz)] = FitModel_t2s(s,te,db0,pini0,numMagn(1),isWeighted(1),weightMethod,isInvivo,userDefine(1),options_step1,DEBUG);
-                    [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn(2),isWeighted(2),weightMethod,isInvivo,model,userDefine(2),options_step2,DEBUG);
+%                     [estimates_step2(ky,kx,kz,:),resnorm_step2(ky,kx,kz)] = FitModel_vfa(s,fa,te,tr,b1,squeeze(estimates_step1(ky,kx,kz,:)),npulse,RFphi,numMagn(2),isWeighted(2),weightMethod,isInvivo,model,userDefine(2),options_step2,DEBUG);
                 end
             end
             if mod(ky,5) == 0;
@@ -292,11 +293,11 @@ if numMagn==length(te)
 else
     freq_comp = 3;
 end
-fitRes.estimates       = cat(4,estimates_step2(:,:,:,1:3),...
-                               estimates_step1(:,:,:,3*nfa+1:3*nfa+3),...
-                               estimates_step2(:,:,:,4:5),...
-                               estimates_step1(:,:,:,3*nfa+4:3*nfa+4+freq_comp-1),...
-                               estimates_step2(:,:,:,6:end));
+% fitRes.estimates       = cat(4,estimates_step2(:,:,:,1:3),...
+%                                estimates_step1(:,:,:,3*nfa+1:3*nfa+3),...
+%                                estimates_step2(:,:,:,4:5),...
+%                                estimates_step1(:,:,:,3*nfa+4:3*nfa+4+freq_comp-1),...
+%                                estimates_step2(:,:,:,6:end));
 
 end
 
@@ -317,8 +318,10 @@ end
 if isInvivo
     % common initial guesses for in vivo study
     Amw0   = 0.1*abs(s(:,1)).';	Amwlb   = zeros(1,size(s,1));	Amwub   = 2*s0;
-    Aiw0   = 0.6*abs(s(:,1)).';	Aiwlb   = zeros(1,size(s,1));	Aiwub   = 2*s0;
-    Aew0   = 0.3*abs(s(:,1)).';	Aewlb   = zeros(1,size(s,1));	Aewub   = 2*s0;
+    Aiew0  = 0.9*abs(s(:,1)).'; Aiewlb   = zeros(1,size(s,1));  Aiewub   = 2*s0;
+    ief0   = 0.7;               ieflu = 0;       iefub = 1;
+%     Aiw0   = 0.6*abs(s(:,1)).';	Aiwlb   = zeros(1,size(s,1));	Aiwub   = 2*s0;
+%     Aew0   = 0.3*abs(s(:,1)).';	Aewlb   = zeros(1,size(s,1));	Aewub   = 2*s0;
     t2smw0 = 10e-3;            	t2smwlb = 1e-3;               	t2smwub = 25e-3;
     t2siw0 = 64e-3;            	t2siwlb = 25e-3;                t2siwub = 200e-3;
     t2sew0 = 48e-3;           	t2sewlb = 25e-3;                t2sewub = 200e-3;
@@ -337,20 +340,27 @@ end
 fmw0   = 5;   	fmwlb   = 5-75;  	fmwub   = 5+75;
 fiw0   = 0;    	fiwlb   = -25;      fiwub   = +25;
 % set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ]);
-lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb]);
-ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,fiwub]);
+x0 = double([Amw0 ,Aiew0 ,ief0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ]);
+lb = double([Amwlb,Aiewlb,ieflu,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb]);
+ub = double([Amwub,Aiewub,iefub,t2smwub,t2siwub,t2sewub,fmwub,fiwub]);
+% x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ]);
+% lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb]);
+% ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,fiwub]);
 
 if numMagn~=numel(te) % other fittings  
 
     % total field in Hz, initial phase in radian
     totalField0 = db0(:).';  totalFieldlb   = db0(:).'-100;                 totalFieldub    = db0(:).'+100;
     pini0       = pini(:).'; pinilb         = ones(size(pini0))*(-2*pi);    piniub          = ones(size(pini0))*2*pi;
+%     pini0       = pini; pinilb         = (-2*pi);    piniub          = 2*pi;
     
     % set initial guess and fitting boundaries
-    x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ,totalField0,pini0]);
-    lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb,totalFieldlb,pinilb]);
-    ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,fiwub,totalFieldub,piniub]);
+%     x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ,totalField0,pini0]);
+%     lb = double([Amwlb,Aiwlb,Aewlb,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb,totalFieldlb,pinilb]);
+%     ub = double([Amwub,Aiwub,Aewub,t2smwub,t2siwub,t2sewub,fmwub,fiwub,totalFieldub,piniub]);
+    x0 = double([Amw0 ,Aiew0 ,ief0 ,t2smw0 ,t2siw0 ,t2sew0 ,fmw0 ,fiw0 ,totalField0,pini0]);
+    lb = double([Amwlb,Aiewlb,ieflu,t2smwlb,t2siwlb,t2sewlb,fmwlb,fiwlb,totalFieldlb,pinilb]);
+    ub = double([Amwub,Aiewub,iefub,t2smwub,t2siwub,t2sewub,fmwub,fiwub,totalFieldub,piniub]);
     
 end
 
@@ -381,18 +391,28 @@ end
 function err = CostFunc_t2s(x,s,te,db0,numMagn,isWeighted,weightMethod,DEBUG)
 nfa = size(s,1);
 % capture all fitting parameters
-Amw=x(1:nfa);       Aiw=x(nfa+1:2*nfa);	Aew=x(2*nfa+1:3*nfa);
-t2smw=x(3*nfa+1);   t2siw=x(3*nfa+2);   t2sew=x(3*nfa+3);
-fmw=x(3*nfa+4);     fiw=x(3*nfa+5); 
+% Amw=x(1:nfa);       Aiw=x(nfa+1:2*nfa);	Aew=x(2*nfa+1:3*nfa);
+% t2smw=x(3*nfa+1);   t2siw=x(3*nfa+2);   t2sew=x(3*nfa+3);
+% fmw=x(3*nfa+4);     fiw=x(3*nfa+5); 
+% few = 0; 
+Amw=x(1:nfa);       Aiew=x(nfa+1:2*nfa);	ief=x(2*nfa+1);
+t2smw=x(2*nfa+2);   t2siw=x(2*nfa+3);   t2sew=x(2*nfa+4);
+fmw=x(2*nfa+5);     fiw=x(2*nfa+6); 
 few = 0; 
+
+
+Aiw = Aiew * ief;
+Aew = Aiew * (1-ief);
 
 if numMagn==numel(te) % magnitude fitting
     % no initial phase 
+%     pini        = 0;
     pini        = zeros(1,nfa);
     totalfield  = zeros(1,nfa);
 else    % other fittings  
-    totalfield = x(3*nfa+6:3*nfa+6+nfa-1);
-    pini       = x(3*nfa+6+nfa:end);
+    totalfield = x(2*nfa+7:2*nfa+7+nfa-1);
+    pini       = x(2*nfa+7+nfa:end);
+%     pini       = x(end);
 end
 
 % simulate signal based on parameter input
@@ -401,6 +421,9 @@ for kfa = 1:nfa
     sHat(kfa,:) = mwi_model_3cc_nam2015(te,Amw(kfa),Aiw(kfa),Aew(kfa),...
                                            t2smw,t2siw,t2sew,...
                                            fmw+totalfield(kfa),fiw+totalfield(kfa),few+totalfield(kfa),pini(kfa));
+%     sHat(kfa,:) = mwi_model_3cc_nam2015(te,Amw(kfa),Aiw(kfa),Aew(kfa),...
+%                                            t2smw,t2siw,t2sew,...
+%                                            fmw+totalfield(kfa),fiw+totalfield(kfa),few+totalfield(kfa),pini);
 end
 
 % compute fitting residual
@@ -435,36 +458,36 @@ err = err./norm(abs(s));
 % lambda = 0.1;
 % err = [err;lambda*(db0(:)-totalfield(:))];
 
-% if DEBUG then plots current fitting result
-if DEBUG
-    global DEBUG_resnormAll
-%     figure(99);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;ylim([0-min(abs(s(:))),max(abs(s(:)))+10]);
-%     title('Magnitude');
-%     plot(te(:).',abs(permute(sHat,[2 1])),'x-.');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'o-.');
-%     hold off;
-%     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
-%     text(te(1)/3,max(abs(s(:))*0.1),sprintf('t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f',...
-%         t2smw,t2siw,t2sew,fmw,fiw,few));
-%     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
-%     subplot(212);plot(DEBUG_resnormAll);
-%     if length(DEBUG_resnormAll) <300
-%         xlim([0 300]);
-%     else
-%         xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
+% % if DEBUG then plots current fitting result
+% if DEBUG
+%     global DEBUG_resnormAll
+% %     figure(99);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;ylim([0-min(abs(s(:))),max(abs(s(:)))+10]);
+% %     title('Magnitude');
+% %     plot(te(:).',abs(permute(sHat,[2 1])),'x-.');plot(te(:).',(abs(permute(sHat,[2 1]))-abs(permute(s,[2 1]))),'o-.');
+% %     hold off;
+% %     text(te(1)/3,max(abs(s(:))*0.2),sprintf('resnorm=%f',sum(err(:).^2)));
+% %     text(te(1)/3,max(abs(s(:))*0.1),sprintf('t2*my=%f,t2*ax=%f,t2*ex=%f,fmy=%f,fax=%f,fex=%f',...
+% %         t2smw,t2siw,t2sew,fmw,fiw,few));
+% %     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
+% %     subplot(212);plot(DEBUG_resnormAll);
+% %     if length(DEBUG_resnormAll) <300
+% %         xlim([0 300]);
+% %     else
+% %         xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
+% %     end
+%     
+%     figure(108);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;
+%     subplot(212);plot(te(:).',angle(permute(s,[2 1])),'^-');hold on;
+%     t = 0:te(2)-te(1):0.1;
+%     for kfa = 1:nfa
+%         sHat2(kfa,:) = mwi_model_3cc_nam2015(t,Amw(kfa),Aiw(kfa),Aew(kfa),...
+%                                            t2smw,t2siw,t2sew,...
+%                                            fmw+totalfield(kfa),fiw+totalfield(kfa),few+totalfield(kfa),pini(kfa));
 %     end
-    
-    figure(108);subplot(211);plot(te(:).',abs(permute(s,[2 1])),'^-');hold on;
-    subplot(212);plot(te(:).',angle(permute(s,[2 1])),'^-');hold on;
-    t = 0:te(2)-te(1):0.1;
-    for kfa = 1:nfa
-        sHat2(kfa,:) = mwi_model_3cc_nam2015(t,Amw(kfa),Aiw(kfa),Aew(kfa),...
-                                           t2smw,t2siw,t2sew,...
-                                           fmw+totalfield(kfa),fiw+totalfield(kfa),few+totalfield(kfa),pini(kfa));
-    end
-    subplot(211);plot(t(:).',abs(permute(sHat2,[2 1])),'x-.');hold off;
-    subplot(212);plot(t(:).',angle(permute(sHat2,[2 1])),'x-.');hold off;
-    drawnow;
-end
+%     subplot(211);plot(t(:).',abs(permute(sHat2,[2 1])),'x-.');hold off;
+%     subplot(212);plot(t(:).',angle(permute(sHat2,[2 1])),'x-.');hold off;
+%     drawnow;
+% end
 
 end
 

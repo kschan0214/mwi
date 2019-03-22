@@ -1,4 +1,4 @@
-%% fitRes = mwi_3cx_T2s(algoPara,imgPara)
+%% fitRes = mwi_3cx_T2s_HCFM_prior(algoPara,imgPara)
 %
 % Input
 % --------------
@@ -22,12 +22,13 @@
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
-% Date created: 28 February 2018
-% Date last modified: 16 August 2018
+% Date created: 4 March 2019
+% Date last modified: 
 %
 %
-function fitRes = mwi_3cx_T2s_HCFM_MWFreq(algoPara,imgPara)
-disp('Myelin water imaing: ME-T2* model');
+function fitRes = mwi_3cx_T2s_HCFM_prior(algoPara,imgPara)
+disp('Myelin water imaing: ME-T2* model with HCFM prior');
+
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara]=CheckAndSetDefault(algoPara,imgPara);
 
@@ -38,15 +39,12 @@ DEBUG   = algoPara.DEBUG;
 numMagn    = algoPara.numMagn;
 maxIter    = algoPara.maxIter;
 fcnTol     = algoPara.fcnTol;
+stepTol    = algoPara.stepTol;
 isWeighted = algoPara.isWeighted;
 isParallel = algoPara.isParallel;
 userDefine = algoPara.userDefine;
 isInvivo   = algoPara.isInvivo;
-
-% if DEBUG is on then disables parallel computing
-if DEBUG
-    isParallel = false;
-end
+numEst     = algoPara.numEst;
 
 te    = imgPara.te;
 data  = imgPara.img;
@@ -57,25 +55,25 @@ pini  = imgPara.pini;
 [ny,nx,nz,~,~] = size(data);
 
 % set fitting options
-options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*15,...
-    'StepTolerance',1e-6,'FunctionTolerance',fcnTol);
+options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*numEst,...
+    'StepTolerance',stepTol,'FunctionTolerance',fcnTol);
 
-if ~DEBUG
+if DEBUG
+    % if DEBUG is on then disables parallel computing
+    isParallel = false;
+else
     options.Display = 'off';
 end
 
 % create empty array for fitting results
-if numMagn==numel(te)   % magnitude fitting has 6 estimates
-    estimates = zeros(ny,nx,nz,6);
-else
-    estimates = zeros(ny,nx,nz,8); % others have 8 estimates
-end
+estimates = zeros(ny,nx,nz,numEst);
 
 numMaskedVoxel = length(mask(mask==1));
 numFittedVoxel = 0;
-fprintf('%i voxles need to be fitted...\n',numMaskedVoxel);
-fprintf('Progress (percent): ');
-progress='';
+fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
+progress='0 %%';
+fprintf('Progress: ');
+fprintf(progress);
 
 resnorm   = zeros(ny,nx,nz);
 if isParallel
@@ -91,11 +89,8 @@ if isParallel
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress); fprintf('\b'); end
-            progress=sprintf('%0.1f', numFittedVoxel*100/numMaskedVoxel);
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
+
         end
     end
 else
@@ -111,11 +106,8 @@ else
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress); fprintf('\b'); end
-            progress=sprintf('%0.1f', numFittedVoxel*100/numMaskedVoxel);
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
+
         end
     end
 end
@@ -134,7 +126,6 @@ if DEBUG
     DEBUG_resnormAll=[];
 end
 
-% [~,~,s0] = R2star_regression(s,te);
 b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
 % r2s(kx,ky,kz) = b(2);
 s0 = exp(b(1));
@@ -156,33 +147,26 @@ else
     Aiw0 = 0.6*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
     Aew0 = 0.2*abs(s(1));	Aewlb = 0;	Aewub = 2*abs(s0);  
     t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
-    t2fw0 = 54;           	t2fwlb = 25;    t2fwub = 150;
+    t2fw0  = 54;           	t2fwlb = 25;    t2fwub = 150;
 end
-sin2theta0 = 0.5;      sin2thetalb = 0; sin2theta0ub = 1;
+sin2theta0 = 0.5; sin2thetalb = 0; sin2theta0ub = 1;
 
-if numMagn==numel(te) % magnitude fitting
-    % set initial guess and fitting boundaries
-    x0 = double([Amy0,Aax0,Aex0,t2smy0,t2fw0,sin2theta0]);
-    lb = double([Amylb,Aaxlb,Aexlb,t2smylb,t2fwlb,sin2thetalb]);
-    ub = double([Amyub,Aaxub,Aexub,t2smyub,t2fwub,sin2theta0ub]);
-    
-else    % other fittings
+% set initial guess and fitting boundaries
+x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smy0 ,t2fw0 ,sin2theta0]);
+lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2fwlb,sin2thetalb]);
+ub = double([Amwub,Aiwub,Aewub,t2smyub,t2fwub,sin2theta0ub]);
+
+if numMagn~=numel(te) 
+    % other fittings
     fbkg0   = db0;          	fbkglb   = db0-25;  	fbkgub   = db0+25;
     if isnan(pini0)
         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
     end
     pinilb = -2*pi;         piniub=2*pi;
 
-    % set initial guess and fitting boundaries
-%     x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,fmy0,fbkg0,pini0]);
-%     lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,fmylb,fbkglb,pinilb]);
-%     ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,fmyub,fbkgub,piniub]);
-%     x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2sax0,theta0,fbkg0,pini0]);
-%     lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2saxlb,thetalb,fbkglb,pinilb]);
-%     ub = double([Amwub,Aiwub,Aewub,t2smyub,t2saxub,theta0ub,fbkgub,piniub]);
-    x0 = double([Amw0,Aiw0,Aew0,t2smy0,t2fw0,sin2theta0,fbkg0,pini0]);
-    lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2fwlb,sin2thetalb,fbkglb,pinilb]);
-    ub = double([Amwub,Aiwub,Aewub,t2smyub,t2fwub,sin2theta0ub,fbkgub,piniub]);
+    x0 = double([x0,fbkg0,pini0]);
+    lb = double([lb,fbkglb,pinilb]);
+    ub = double([ub,fbkgub,piniub]);
 end
 
 % set initial guess and fitting bounds here
@@ -196,6 +180,10 @@ if ~isempty(userDefine.ub)
     ub(~isnan(userDefine.ub)) = userDefine.ub(~isnan(userDefine.ub));
 end
 
+if DEBUG
+    x0
+end
+
 % run fitting algorithm here
 [x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
 
@@ -204,8 +192,8 @@ end
 %% compute the cost function of the optimisation problem
 function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
-A_mw=x(1);    A_iw=x(2);   A_ew=x(3);
-t2s_mw=x(4)*1e-3;  t2_fw=x(5)*1e-3; 
+A_mw=x(1); A_iw=x(2); A_ew=x(3);
+t2s_mw=x(4)*1e-3; t2_fw=x(5)*1e-3; 
 sin2theta=x(6); 
 
 if numMagn==numel(te) 
@@ -264,6 +252,8 @@ try algoPara2.isParallel = algoPara.isParallel;         catch; algoPara2.isParal
 try algoPara2.maxIter = algoPara.maxIter;               catch; algoPara2.maxIter = 500; end
 % check function tolerance
 try algoPara2.fcnTol = algoPara.fcnTol;                 catch; algoPara2.fcnTol = 1e-6; end
+% check step tolerance
+try algoPara2.stepTol = algoPara.stepTol;               catch; algoPara2.stepTol = 1e-6; end
 % check weighted sum of cost function
 try algoPara2.isWeighted = algoPara.isWeighted;         catch; algoPara2.isWeighted = true; end
 % check # of phase-corrupted echoes
@@ -306,14 +296,10 @@ catch
 end
 
 %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
-disp('The following fitting parameters are used:');
+disp('Fitting options:');
 fprintf('Max. iterations = %i\n',algoPara2.maxIter);
-fprintf('Function tolerance = %e\n',algoPara2.fcnTol);
-if algoPara2.isWeighted
-    disp('Cost function weighted by echo intensity: True');
-else
-    disp('Cost function weighted by echo intensity: False');
-end
+fprintf('Function tolerance = %.2e\n',algoPara2.fcnTol);
+fprintf('Step tolerance = %.2e\n',algoPara2.stepTol);
 % type of fitting
 if algoPara2.numMagn==0
     disp('Fitting complex model with complex data');
@@ -344,6 +330,20 @@ if algoPara2.isInvivo
 else
     disp('Initial guesses for ex vivo study');
 end
+
+disp('Cost function options:');
+if algoPara2.isWeighted
+    disp('Cost function weighted by echo intensity: True');
+else
+    disp('Cost function weighted by echo intensity: False');
+end
+
+% determine the number of estimates
+numEst = 6; % basic setting has 6 estimates
+if algoPara2.numMagn~=numel(imgPara2.te)
+    numEst = numEst + 2; % total field and inital phase
+end
+algoPara2.numEst = numEst;
     
 end
 
@@ -397,10 +397,22 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
         text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
     end
-    if length(DEBUG_resnormAll) <300
-        xlim([0 300]);
+    if length(DEBUG_resnormAll) <100
+        xlim([0 100]);
     else
-        xlim([length(DEBUG_resnormAll)-300 length(DEBUG_resnormAll)]);
+        xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
     end
     drawnow;
+end
+
+%% progress display
+function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask)
+% number of non zeros element in the current mask
+numFittedVoxel = numFittedVoxel + nnz(mask);
+% delete previous progress
+for ii=1:length(progress)-1; fprintf('\b'); end
+% display current progress
+progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
+fprintf(progress);
+
 end

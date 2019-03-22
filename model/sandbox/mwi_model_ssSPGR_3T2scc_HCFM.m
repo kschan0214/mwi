@@ -42,6 +42,10 @@ function s = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,t2smw,t2fw,sin2theta
 % gyromagnetic ratio
 gyro = 42.57747892;
 
+if nargin < 8
+    param = [];
+end
+
 % check and set default constants
 param = checkSetDefault(param);
 b0          = param.b0;
@@ -63,11 +67,7 @@ if isempty(g)
     g   = sqrt(A_iw/(A_iw+A_mw/rho_mw));
 end
 if isempty(fvf)
-    if A_ew ~= 0
-        fvf = (A_iw/A_ew)/((A_iw/A_ew)+g.^2); 
-    else
-        fvf = 1;
-    end
+    fvf = (A_iw+A_mw/rho_mw)/(A_iw+A_mw/rho_mw+A_ew); 
 end
 
 % coefficients, Eq.[A15]
@@ -86,13 +86,17 @@ freq_iw = (3/4)*x_a*log(1/g)*sin2theta*b0*gyro;
 
 x_d = (x_i+x_a/4)*(1-g.^2);
 
-% alpha is the transition time from quadratic to linear dephasing
-alpha = 3 / (abs(x_d)*2*pi*gyro*b0*sin2theta);
+if sin2theta == 0
+    % alpha is the transition time from quadratic to linear dephasing
+    alpha = 3 / (abs(x_d)*2*pi*gyro*b0*sin2theta);
 
-% extra decay term of extracellular water
-D_E = zeros(size(te));
-D_E(te<=alpha) = (fvf/16) * (abs(x_d)*gyro*2*pi*b0*sin2theta*te(te<=alpha)).^2;
-D_E(te>alpha)  = (fvf/2)  * (abs(x_d)*gyro*2*pi*b0*sin2theta)*(te(te>alpha)-2/((abs(x_d)*gyro*2*pi*b0*sin2theta)));
+    % extra decay term of extracellular water
+    D_E = zeros(size(te));
+    D_E(te<=alpha) = (fvf/16) * (abs(x_d)*gyro*2*pi*b0*sin2theta*te(te<=alpha)).^2;
+    D_E(te>alpha)  = (fvf/2)  * (abs(x_d)*gyro*2*pi*b0*sin2theta)*(te(te>alpha)-2/((abs(x_d)*gyro*2*pi*b0*sin2theta)));
+else
+    D_E = zeros(size(te));
+end
 
 s = (A_mw*exp(te*(-1/t2smw+1i*2*pi*(freq_mw+freq_bkg))) + ...
      A_iw*exp(te*(-1/t2fw +1i*2*pi*(freq_iw+freq_bkg))) + ...
