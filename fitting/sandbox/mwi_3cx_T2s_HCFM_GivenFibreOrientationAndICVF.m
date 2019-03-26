@@ -26,7 +26,7 @@
 % Date last modified: 
 %
 %
-function fitRes = mwi_3cx_T2s_HCFM_GivenFibreOrientation(algoPara,imgPara)
+function fitRes = mwi_3cx_T2s_HCFM_GivenFibreOrientationAndICVF(algoPara,imgPara)
 disp('Myelin water imaing: ME-T2* model with HCFM prior');
 
 % check validity of the algorithm parameters and image parameters
@@ -47,20 +47,25 @@ isInvivo   = algoPara.isInvivo;
 numEst     = algoPara.numEst;
 
 te    = double(imgPara.te);
+b0dir = double(imgPara.b0dir);
 data  = double(imgPara.img);
-mask  = imgPara.mask;
+mask  = double(imgPara.mask);
 fm    = double(imgPara.fieldmap);
 pini  = double(imgPara.pini);
-fo    = double(imgPara.fo); % fibre orientation
+icvf  = double(imgPara.icvf);
 ff    = double(imgPara.ff); % fibre fraction
-b0dir = double(imgPara.b0dir);
-
-ff = bsxfun(@rdivide,ff,sum(ff,4));
-
-theta = zeros(size(ff));
-for kfo = 1:size(fo,5)
-    theta(:,:,:,kfo) = AngleBetweenV1MapAndB0(fo(:,:,:,:,kfo),b0dir);
+try 
+    fo    = double(imgPara.fo); % fibre orientation
+    theta = zeros(size(ff));
+    for kfo = 1:size(fo,5)
+        theta(:,:,:,kfo) = AngleBetweenV1MapAndB0(fo(:,:,:,:,kfo),b0dir);
+    end
+catch 
+    theta = double(imgPara.theta); % theta map
 end
+
+% normalise fibre fraction
+ff = bsxfun(@rdivide,ff,sum(ff,4));
 
 [ny,nx,nz,~,~] = size(data);
 
@@ -92,12 +97,13 @@ if isParallel
             parfor kx=1:nx
                 if mask(ky,kx,kz)>0
                     % T2*w
-                    s = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
-                    db0 = fm(ky,kx,kz);
-                    pini0 = pini(ky,kx,kz);
-                    theta0 = squeeze(theta(ky,kx,kz,:));
-                    ff0 = squeeze(ff(ky,kx,kz,:));
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
+                    db0     = fm(ky,kx,kz);
+                    pini0   = pini(ky,kx,kz);
+                    theta0  = squeeze(theta(ky,kx,kz,:));
+                    ff0     = squeeze(ff(ky,kx,kz,:));
+                    icvf0   = icvf(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
@@ -116,7 +122,8 @@ else
                     pini0 = pini(ky,kx,kz);
                     theta0 = squeeze(theta(ky,kx,kz,:));
                     ff0 = squeeze(ff(ky,kx,kz,:));
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    icvf0   = icvf(ky,kx,kz);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
@@ -133,7 +140,7 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,te,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
+function [x,res] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
@@ -151,24 +158,22 @@ end
 if isInvivo
     % in vivo reference
     Amw0    = 0.1*abs(s(1));    Amwlb      = 0;    Amwub    = 2*abs(s0);
-    Aiw0    = 0.6*abs(s(1));    Aiwlb      = 0;    Aiwub    = 2*abs(s0);1/36e
-    Aew0    = 0.3*abs(s(1));    Aewlb      = 0;    Aewub    = 2*abs(s0);  
+    Aiw0    = 0.9*icvf0*abs(s(1));  Aiwlb      = 0;    Aiwub    = 2*abs(s0);  
     t2smy0  = 10;               t2smylb    = 1;    t2smyub  = 25;
     t2fw0   = 64;               t2fwlb     = 25;   t2fwub   = 150;
 %     t2ew0   = 48;               t2ewlb     = 25;   t2ewub   = 150;
 else
     % ex vivo reference
     Amw0 = 0.2*abs(s(1));   Amwlb = 0;  Amwub = 2*abs(s0);
-    Aiw0 = 0.6*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
-    Aew0 = 0.2*abs(s(1));	Aewlb = 0;	Aewub = 2*abs(s0);  
+    Aiw0 = icvf0*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
     t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
     t2fw0  = 54;           	t2fwlb = 25;    t2fwub = 150;
 end
 
 % set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,Aew0 ,t2smy0 ,t2fw0 ]);
-lb = double([Amwlb,Aiwlb,Aewlb,t2smylb,t2fwlb]);
-ub = double([Amwub,Aiwub,Aewub,t2smyub,t2fwub]);
+x0 = double([Amw0 ,Aiw0 ,t2smy0 ,t2fw0 ]);
+lb = double([Amwlb,Aiwlb,t2smylb,t2fwlb]);
+ub = double([Amwub,Aiwub,t2smyub,t2fwub]);
 
 if numMagn~=numel(te) 
     % other fittings
@@ -199,23 +204,24 @@ if DEBUG
 end
 
 % run fitting algorithm here
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,theta0,ff0,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,icvf0,theta0,ff0,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,te,theta,ff,numMagn,isWeighted,DEBUG)
+function err = CostFunc(x,s,te,icvf,theta,ff,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
-A_mw=x(1); A_iw=x(2); A_ew=x(3);
-t2s_mw=x(4)*1e-3; t2_fw=x(5)*1e-3; 
-% t2s_ew=x(6)*1e-3;
+A_mw=x(1); A_iw=x(2); 
+t2s_mw=x(3)*1e-3; t2_fw=x(4)*1e-3; 
+
+A_ew=A_iw*(1-icvf)/icvf;
 
 if numMagn==numel(te) 
     % magnitude fitting
     freq_bkg=0;        pini=0;
 else
     % other fittings
-    freq_bkg=x(6);     pini=x(7);
+    freq_bkg=x(5);     pini=x(6);
 end
 
 param.b0        = 3;
@@ -317,7 +323,13 @@ try
     imgPara2.fo = imgPara.fo;
     disp('Fibre orientation input: True');
 catch
-    error('Fibre orienation map is required');
+    try
+        imgPara2.theta = imgPara.theta;
+        disp('Fibre orientation input: False');
+        disp('Theta input: True');
+    catch
+        error('Fibre orienation map or theta map is required');
+    end
 end
 % b0dir
 try
@@ -372,7 +384,7 @@ else
 end
 
 % determine the number of estimates
-numEst = 5; % basic setting has 6 estimates
+numEst = 4; % basic setting has 6 estimates
 if algoPara2.numMagn~=numel(imgPara2.te)
     numEst = numEst + 2; % total field and inital phase
 end

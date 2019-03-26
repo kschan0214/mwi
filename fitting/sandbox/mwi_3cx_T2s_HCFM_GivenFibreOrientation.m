@@ -151,7 +151,7 @@ end
 if isInvivo
     % in vivo reference
     Amw0    = 0.1*abs(s(1));    Amwlb      = 0;    Amwub    = 2*abs(s0);
-    Aiw0    = 0.6*abs(s(1));    Aiwlb      = 0;    Aiwub    = 2*abs(s0);1/36e
+    Aiw0    = 0.6*abs(s(1));    Aiwlb      = 0;    Aiwub    = 2*abs(s0);
     Aew0    = 0.3*abs(s(1));    Aewlb      = 0;    Aewub    = 2*abs(s0);  
     t2smy0  = 10;               t2smylb    = 1;    t2smyub  = 25;
     t2fw0   = 64;               t2fwlb     = 25;   t2fwub   = 150;
