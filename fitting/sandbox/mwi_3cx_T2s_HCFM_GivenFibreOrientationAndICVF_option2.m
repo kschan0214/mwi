@@ -26,7 +26,7 @@
 % Date last modified: 
 %
 %
-function fitRes = mwi_3cx_T2s_HCFM_GivenFibreOrientationAndICVF(algoPara,imgPara)
+function fitRes = mwi_3cx_T2s_HCFM_GivenFibreOrientationAndICVF_option2(algoPara,imgPara)
 disp('Myelin water imaing: ME-T2* model with HCFM prior');
 
 % check validity of the algorithm parameters and image parameters
@@ -148,8 +148,9 @@ if DEBUG
 end
 
 b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
-% r2s(kx,ky,kz) = b(2);
 s0 = exp(b(1));
+b = [ones(length(te(ceil(end/2):end)),1), -te(ceil(end/2):end)]\log(abs(s(ceil(end/2):end))).';
+t2s = 1e3/b(2);
 if s0<0
     s0=0;
 end
@@ -160,20 +161,22 @@ if isInvivo
     Amw0    = 0.1*abs(s(1));    Amwlb      = 0;    Amwub    = 2*abs(s0);
     Aiw0    = 0.9*icvf0*abs(s(1));  Aiwlb      = 0;    Aiwub    = 2*abs(s0);  
     t2smy0  = 10;               t2smylb    = 1;    t2smyub  = 25;
-    t2fw0   = 64;               t2fwlb     = 25;   t2fwub   = 150;
-%     t2ew0   = 48;               t2ewlb     = 25;   t2ewub   = 150;
+%     t2siw0   = 64;              t2siwlb     = 25;  t2siwub   = 150;
+%     t2sew0   = 48;              t2sewlb     = 25;  t2sewub   = 150;
+    t2siw0 = t2s+10;                t2siwlb = t2s;       t2siwub = 150;
+    t2sew0 = t2s-10;                t2sewlb = 25;       t2sewub = t2s;
 else
     % ex vivo reference
     Amw0 = 0.2*abs(s(1));   Amwlb = 0;  Amwub = 2*abs(s0);
     Aiw0 = icvf0*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
     t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
-    t2fw0  = 54;           	t2fwlb = 25;    t2fwub = 150;
+    t2siw0  = 54;           	t2siwlb = 25;    t2siwub = 150;
 end
 
 % set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,t2smy0 ,t2fw0 ]);
-lb = double([Amwlb,Aiwlb,t2smylb,t2fwlb]);
-ub = double([Amwub,Aiwub,t2smyub,t2fwub]);
+x0 = double([Amw0 ,Aiw0 ,t2smy0 ,t2siw0 ,t2sew0]);
+lb = double([Amwlb,Aiwlb,t2smylb,t2siwlb,t2sewlb]);
+ub = double([Amwub,Aiwub,t2smyub,t2siwub,t2sewub]);
 
 if numMagn~=numel(te) 
     % other fittings
@@ -212,7 +215,7 @@ end
 function err = CostFunc(x,s,te,icvf,theta,ff,numMagn,isWeighted,DEBUG)
 % distribute fitting parameters
 A_mw=x(1); A_iw=x(2); 
-t2s_mw=x(3)*1e-3; t2_fw=x(4)*1e-3; 
+t2s_mw=x(3)*1e-3; t2s_iw=x(4)*1e-3; t2s_ew=x(5)*1e-3; 
 
 A_ew=A_iw*(1-icvf)/icvf;
 
@@ -221,7 +224,7 @@ if numMagn==numel(te)
     freq_bkg=0;        pini=0;
 else
     % other fittings
-    freq_bkg=x(5);     pini=x(6);
+    freq_bkg=x(6);     pini=x(7);
 end
 
 param.b0        = 3;
@@ -231,7 +234,7 @@ param.freq_bkg  = freq_bkg;
 sHat = zeros([length(s) length(theta)]);
 for kfo = 1:length(theta)
     sin2theta = sin(theta(kfo)).^2;
-    sHat(:,kfo) = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,t2s_mw,t2_fw,sin2theta,param);
+    sHat(:,kfo) = mwi_model_ssSPGR_3T2scc_HCFMFreq(te,A_mw,A_iw,A_ew,t2s_mw,t2s_iw,t2s_ew,sin2theta,param);
 end
 sHat = sum(bsxfun(@times,sHat,ff(:).'),2);
 
@@ -384,7 +387,7 @@ else
 end
 
 % determine the number of estimates
-numEst = 4; % basic setting has 6 estimates
+numEst = 5; % basic setting has 6 estimates
 if algoPara2.numMagn~=numel(imgPara2.te)
     numEst = numEst + 2; % total field and inital phase
 end

@@ -47,6 +47,7 @@ isParallel = algoPara.isParallel;
 userDefine = algoPara.userDefine;
 isInvivo   = algoPara.isInvivo;
 numEst     = algoPara.numEst;
+isNormCost = algoPara.isNormCost;
 
 te    = imgPara.te;
 data  = imgPara.img;
@@ -87,15 +88,11 @@ if isParallel
                     s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                     db0     = fm(ky,kx,kz);
                     pini0   = pini(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 else
@@ -107,15 +104,11 @@ else
                     s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                     db0     = fm(ky,kx,kz);
                     pini0   = pini(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
-            tmp = mask(ky,:,kz);
-            numFittedVoxel = numFittedVoxel + length(tmp(tmp==1));
-            for ii=1:length(progress)-1; fprintf('\b'); end
-            progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-            fprintf(progress);
+            [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
         end
     end
 end
@@ -127,7 +120,7 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,te,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
+function [x,res] = FitModel(s,te,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
@@ -214,12 +207,12 @@ if DEBUG
 end
 
 % run fitting algorithm here
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,numMagn,isNormCost,isWeighted,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,te,numMagn,isWeighted,DEBUG)
+function err = CostFunc(x,s,te,numMagn,isNormCost,isWeighted,DEBUG)
 % distribute fitting parameters
 Amw=x(1);    Aiw=x(2);   Aew=x(3);
 t2smw=x(4)*1e-3;  t2siw=x(5)*1e-3; t2sew=x(6)*1e-3;
@@ -252,8 +245,10 @@ err = computeFiter(s,sHat,numMagn,w);
 
 % cost function is normalised with the norm of signal in order to provide
 % sort of consistence with fixed function tolerance
-err = err ./ norm(abs(s(:)));
-% err = err ./ mean(abs(s(:)));
+if isNormCost
+    err = err ./ norm(abs(s(:)));
+    % err = err ./ mean(abs(s(:)));
+end
 
 % Debug module
 if DEBUG
@@ -285,6 +280,8 @@ try algoPara2.isWeighted = algoPara.isWeighted;         catch; algoPara2.isWeigh
 try algoPara2.numMagn = algoPara.numMagn;               catch; algoPara2.numMagn = numel(imgPara.te); end
 % check # of phase-corrupted echoes
 try algoPara2.isInvivo = algoPara.isInvivo;             catch; algoPara2.isInvivo = true; end
+% check # of phase-corrupted echoes
+try algoPara2.isNormCost = algoPara.isNormCost;         catch; algoPara2.isNormCost = true; end
 % check user bounds and initial guesses
 try algoPara2.userDefine.x0 = algoPara.userDefine.x0;   catch; algoPara2.userDefine.x0 = [];end
 try algoPara2.userDefine.lb = algoPara.userDefine.lb;   catch; algoPara2.userDefine.lb = [];end
@@ -362,6 +359,11 @@ if algoPara2.isWeighted
 else
     disp('Cost function weighted by echo intensity: False');
 end
+if algoPara2.isNormCost
+    disp('Cost function is normalised by signal intensity: True');
+else
+    disp('Cost function is normalised by signal intensity: False');
+end
 
 % determine the number of estimates
 numEst = 8; % basic setting has 6 estimates
@@ -428,4 +430,22 @@ function Debug_display(s,sHat,err,te,x,numMagn)
         xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
     end
     drawnow;
+end
+
+%% progress display
+function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask)
+previous_progress_percentage = floor(numFittedVoxel*100/numMaskedVoxel);
+
+% update number of non zeros element in the current mask
+numFittedVoxel = numFittedVoxel + nnz(mask);
+
+current_progress_percentage = floor(numFittedVoxel*100/numMaskedVoxel);
+
+if previous_progress_percentage ~= current_progress_percentage
+    % delete previous progress
+    for ii=1:length(progress)-1; fprintf('\b'); end
+    % display current progress
+    progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
+    fprintf(progress);
+end
 end

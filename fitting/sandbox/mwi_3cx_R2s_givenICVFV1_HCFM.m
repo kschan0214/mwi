@@ -1,4 +1,4 @@
-%% fitRes = mwi_3cx_T2s_HCFM_prior(algoPara,imgPara)
+%% fitRes = mwi_3cx_T2s(algoPara,imgPara)
 %
 % Input
 % --------------
@@ -11,6 +11,7 @@
 % imgPara.mask     : signal mask
 % imgPara.te       : echo times
 % imgPara.fieldmap : background field (default: 0)
+% imgPara.pini     : initial phase 
 %
 % Output
 % --------------
@@ -22,17 +23,18 @@
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
-% Date created: 4 March 2019
-% Date last modified: 
+% Date created: 28 February 2018
+% Date modified: 16 August 2018
+% Date modified: 6 March 2019
 %
 %
-function fitRes = mwi_3cx_T2s_HCFM_GivenFibreOrientationAndICVF(algoPara,imgPara)
-disp('Myelin water imaing: ME-T2* model with HCFM prior');
+function fitRes = mwi_3cx_R2s_givenICVFV1_HCFM(algoPara,imgPara)
+disp('Myelin water imaing: Multi-echo-T2* model');
 
 % check validity of the algorithm parameters and image parameters
 [algoPara,imgPara]=CheckAndSetDefault(algoPara,imgPara);
 
-% get debug mode 
+% get debug mode
 DEBUG   = algoPara.DEBUG;
 
 % capture all algorithm parameters
@@ -45,6 +47,7 @@ isParallel = algoPara.isParallel;
 userDefine = algoPara.userDefine;
 isInvivo   = algoPara.isInvivo;
 numEst     = algoPara.numEst;
+isNormCost = algoPara.isNormCost;
 
 te    = double(imgPara.te);
 b0dir = double(imgPara.b0dir);
@@ -66,6 +69,7 @@ end
 
 % normalise fibre fraction
 ff = bsxfun(@rdivide,ff,sum(ff,4));
+ff(isnan(ff)) = 0;
 
 [ny,nx,nz,~,~] = size(data);
 
@@ -95,7 +99,7 @@ if isParallel
     for kz=1:nz
         for ky=1:ny
             parfor kx=1:nx
-                if mask(ky,kx,kz)>0
+                if mask(ky,kx,kz)>0 && sum(squeeze(ff(ky,kx,kz,:))) > 0
                     % T2*w
                     s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
                     db0     = fm(ky,kx,kz);
@@ -103,32 +107,30 @@ if isParallel
                     theta0  = squeeze(theta(ky,kx,kz,:));
                     ff0     = squeeze(ff(ky,kx,kz,:));
                     icvf0   = icvf(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
             [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
-
         end
     end
 else
     for kz=1:nz
         for ky=1:ny
             for kx=1:nx
-                if mask(ky,kx,kz)>0
+                if mask(ky,kx,kz)>0 && sum(squeeze(ff(ky,kx,kz,:))) > 0
                     % T2*w
-                    s = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
-                    db0 = fm(ky,kx,kz);
-                    pini0 = pini(ky,kx,kz);
-                    theta0 = squeeze(theta(ky,kx,kz,:));
-                    ff0 = squeeze(ff(ky,kx,kz,:));
+                    s       = permute(data(ky,kx,kz,:),[5 4 1 2 3]);
+                    db0     = fm(ky,kx,kz);
+                    pini0   = pini(ky,kx,kz);
+                    theta0  = squeeze(theta(ky,kx,kz,:));
+                    ff0     = squeeze(ff(ky,kx,kz,:));
                     icvf0   = icvf(ky,kx,kz);
-                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG);
+                    [estimates(ky,kx,kz,:),resnorm(ky,kx,kz)] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG);
                 end
             end
             % display progress
             [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,mask(ky,:,kz));
-
         end
     end
 end
@@ -140,52 +142,50 @@ fitRes.resnorm   = resnorm;
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,userDefine,isInvivo,options,DEBUG)
+function [x,res] = FitModel(s,te,icvf0,theta0,ff0,db0,pini0,numMagn,isWeighted,isNormCost,userDefine,isInvivo,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
 end
 
-b = [ones(length(te),1), -te(:)]\log(abs(s(:)));
-% r2s(kx,ky,kz) = b(2);
-s0 = exp(b(1));
-if s0<0
-    s0=0;
-end
-      
+
+
 % set initial guesses
 if isInvivo
     % in vivo reference
-    Amw0    = 0.1*abs(s(1));    Amwlb      = 0;    Amwub    = 2*abs(s0);
-    Aiw0    = 0.9*icvf0*abs(s(1));  Aiwlb      = 0;    Aiwub    = 2*abs(s0);  
-    t2smy0  = 10;               t2smylb    = 1;    t2smyub  = 25;
-    t2fw0   = 64;               t2fwlb     = 25;   t2fwub   = 150;
-%     t2ew0   = 48;               t2ewlb     = 25;   t2ewub   = 150;
+    Amy0   = 0.1*abs(s(1));     Amylb   = 0;        Amyub   = 2*abs(s(1));
+    Aie0   = 0.9*abs(s(1));  	Aielb   = 0;        Aieub   = 2*abs(s(1));
+    r2smw0 = 100;            	r2smwlb = 40;       r2smwub = 300;
+    r2siw0 = 16;                r2siwlb = 6;        r2siwub = 40;
+    r2sew0 = 21;                r2sewlb = 6;        r2sewub = 40;
+    
 else
     % ex vivo reference
-    Amw0 = 0.2*abs(s(1));   Amwlb = 0;  Amwub = 2*abs(s0);
-    Aiw0 = icvf0*abs(s(1));   Aiwlb = 0;  Aiwub = 2*abs(s0);
-    t2smy0 = 10;            t2smylb = 1;     t2smyub = 25;
-    t2fw0  = 54;           	t2fwlb = 25;    t2fwub = 150;
+%     Amy0   = 0.15*abs(s(1));    Amylb   = 0;        Amyub   = 2*abs(s0);
+%     Aax0   = 0.65*abs(s(1));  	Aaxlb   = 0;        Aaxub   = 2*abs(s0);
+%     Aex0   = 0.2*abs(s(1));    	Aexlb   = 0;        Aexub   = 2*abs(s0);
+%     r2smw0 = 10;            	r2smwlb = 1;        r2smwub = 25;
+%     r2siw0 = 54;                t2siwlb = 25;       t2siwub = 200;
+%     r2sew0 = 38;                t2sewlb = 25;       t2sewub = 200;
 end
-
+    
 % set initial guess and fitting boundaries
-x0 = double([Amw0 ,Aiw0 ,t2smy0 ,t2fw0 ]);
-lb = double([Amwlb,Aiwlb,t2smylb,t2fwlb]);
-ub = double([Amwub,Aiwub,t2smyub,t2fwub]);
+x0 = double([Amy0 ,Aie0 ,r2smw0 ,r2siw0 ,r2sew0 ]);
+lb = double([Amylb,Aielb,r2smwlb,r2siwlb,r2sewlb]);
+ub = double([Amyub,Aieub,r2smwub,r2siwub,r2sewub]);
+if numMagn~=numel(te) % magnitude fitting
 
-if numMagn~=numel(te) 
-    % other fittings
-    fbkg0   = db0;          	fbkglb   = db0-25;  	fbkgub   = db0+25;
+    fbg0   = db0*2*pi;          	fbglb     = (db0-25)*2*pi;     fbgub  = (db0+25)*2*pi;
     if isnan(pini0)
         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
     end
     pinilb = -2*pi;         piniub=2*pi;
 
-    x0 = double([x0,fbkg0,pini0]);
-    lb = double([lb,fbkglb,pinilb]);
-    ub = double([ub,fbkgub,piniub]);
+    % extra parameters
+    x0 = double([x0,fbg0,pini0]);
+    lb = double([lb,fbglb,pinilb]);
+    ub = double([ub,fbgub,piniub]);
 end
 
 % set initial guess and fitting bounds here
@@ -204,38 +204,46 @@ if DEBUG
 end
 
 % run fitting algorithm here
-[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,icvf0,theta0,ff0,numMagn,isWeighted,DEBUG),x0,lb,ub,options);
+[x,res] = lsqnonlin(@(y)CostFunc(y,s,te,icvf0,theta0,ff0,numMagn,isWeighted,isNormCost,DEBUG),x0,lb,ub,options);
 
 end
 
 %% compute the cost function of the optimisation problem
-function err = CostFunc(x,s,te,icvf,theta,ff,numMagn,isWeighted,DEBUG)
+function err = CostFunc(x,s,te,icvf,theta,ff,numMagn,isWeighted,isNormCost,DEBUG)
 % distribute fitting parameters
-A_mw=x(1); A_iw=x(2); 
-t2s_mw=x(3)*1e-3; t2_fw=x(4)*1e-3; 
+Amw=x(1);    Aie=x(2);
+t2smw=1/x(3);  t2siw=1/x(4); t2sew=1/x(5);
 
-A_ew=A_iw*(1-icvf)/icvf;
-
-if numMagn==numel(te) 
-    % magnitude fitting
-    freq_bkg=0;        pini=0;
-else
-    % other fittings
-    freq_bkg=x(5);     pini=x(6);
+if numMagn==numel(te) % magnitude fitting
+    fbg=0;        pini=0;
+else    % other fittings
+    fbg=x(6)/(2*pi);     pini=x(7);
 end
 
-param.b0        = 3;
-param.pini      = pini;
-param.freq_bkg  = freq_bkg;
+Aiw = Aie*icvf; Aew = Aie*(1-icvf);
+
+b0    	= 3;
+rho_mw  = 0.43;
+E       = 0.02;
+x_a     = -0.1;
+x_i     = -0.1;
 
 sHat = zeros([length(s) length(theta)]);
 for kfo = 1:length(theta)
-    sin2theta = sin(theta(kfo)).^2;
-    sHat(:,kfo) = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,t2s_mw,t2_fw,sin2theta,param);
+    g   = sqrt(Aiw/(Aiw+Amw/rho_mw));
+    [freq_mw,freq_iw] = HCFM_FreqShift(theta(kfo),x_i,x_a,g,E,b0);
+    fmwbg = freq_mw + fbg;
+    fiwbg = freq_iw + fbg;
+%     sin2theta = sin(theta(kfo)).^2;
+%     sHat(:,kfo) = mwi_model_ssSPGR_3T2scc_HCFM(te,A_mw,A_iw,A_ew,t2s_mw,t2_fw,sin2theta,param);
+    sHat(:,kfo) = mwi_model_3cc_nam2015(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,fmwbg,fiwbg,fbg,pini);
 end
 sHat = sum(bsxfun(@times,sHat,ff(:).'),2);
 
-% matching the size of simulated signal and the measured signal
+
+% simulate signal based on parameter input
+
+
 if size(sHat,1) ~= size(s,1)
     sHat = sHat.';
 end
@@ -243,7 +251,9 @@ end
 % compute fitting residual
 if isWeighted
     % weighted the cost function by echo intensity, as suggested in Nam's paper
-    w = sqrt(abs(s)/norm(abs(s(:))));
+%     w = sqrt(abs(s)/norm(abs(s(:))));
+%     w = sqrt(abs(s)/sum(abs(s(:))));
+    w = sqrt(abs(s));
 else
     % compute the cost without weights (=same weights)
     w = sqrt(ones(size(s))/numel(s));
@@ -252,7 +262,10 @@ err = computeFiter(s,sHat,numMagn,w);
 
 % cost function is normalised with the norm of signal in order to provide
 % sort of consistence with fixed function tolerance
-err = err ./ norm(abs(s(:)));
+if isNormCost
+    err = err ./ norm(abs(s(:)));
+    % err = err ./ mean(abs(s(:)));
+end
 
 % Debug module
 if DEBUG
@@ -284,6 +297,8 @@ try algoPara2.isWeighted = algoPara.isWeighted;         catch; algoPara2.isWeigh
 try algoPara2.numMagn = algoPara.numMagn;               catch; algoPara2.numMagn = numel(imgPara.te); end
 % check # of phase-corrupted echoes
 try algoPara2.isInvivo = algoPara.isInvivo;             catch; algoPara2.isInvivo = true; end
+% check # of phase-corrupted echoes
+try algoPara2.isNormCost = algoPara.isNormCost;         catch; algoPara2.isNormCost = true; end
 % check user bounds and initial guesses
 try algoPara2.userDefine.x0 = algoPara.userDefine.x0;   catch; algoPara2.userDefine.x0 = [];end
 try algoPara2.userDefine.lb = algoPara.userDefine.lb;   catch; algoPara2.userDefine.lb = [];end
@@ -382,14 +397,19 @@ if algoPara2.isWeighted
 else
     disp('Cost function weighted by echo intensity: False');
 end
+if algoPara2.isNormCost
+    disp('Cost function is normalised by signal intensity: True');
+else
+    disp('Cost function is normalised by signal intensity: False');
+end
 
 % determine the number of estimates
-numEst = 4; % basic setting has 6 estimates
+numEst = 5; % basic setting has 6 estimates
 if algoPara2.numMagn~=numel(imgPara2.te)
     numEst = numEst + 2; % total field and inital phase
 end
 algoPara2.numEst = numEst;
-    
+
 end
 
 %% Info display for debug mode
