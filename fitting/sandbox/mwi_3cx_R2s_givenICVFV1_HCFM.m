@@ -174,7 +174,7 @@ end
 x0 = double([Amy0 ,Aie0 ,r2smw0 ,r2siw0 ,r2sew0 ]);
 lb = double([Amylb,Aielb,r2smwlb,r2siwlb,r2sewlb]);
 ub = double([Amyub,Aieub,r2smwub,r2siwub,r2sewub]);
-if numMagn~=numel(te) % magnitude fitting
+if numMagn~=numel(te) % non magnitude fitting
 
     fbg0   = db0*2*pi;          	fbglb     = (db0-25)*2*pi;     fbgub  = (db0+25)*2*pi;
     if isnan(pini0)
