@@ -35,6 +35,6 @@ c1 = hcfm_c1(g);
 % Eq.[5]
 freq_myelin = ((x_i./2).*(2/3 - sind(theta).^2) + (x_a./2).*(c1.*sind(theta).^2 - 1/3) + E)*gyro*b0;
 % Eq.[6]
-freq_axon = (3*x_i./4) .* sind(theta).^2 .* log(1./g) * gyro*b0;
+freq_axon = (3*x_a./4) .* sind(theta).^2 .* log(1./g) * gyro*b0;
 
 end
