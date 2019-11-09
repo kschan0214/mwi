@@ -5,7 +5,7 @@
 % x_i           : isotropic susceptibility (in ppm)
 % x_a           : anisotropic susceptibility (in ppm)
 % g             : g-ratio
-% theta         : angle between B0 and fibre direction (degree)
+% theta         : angle between B0 and fibre direction (rad)
 % b0            : field strength (in T)
 %
 % Output
@@ -22,7 +22,7 @@
 %
 %
 function t = hcfm_transition_time(x_i,x_a,g,theta,b0)
-gyro = 42.57747892;
+gyro = 2*pi*42.57747892;
 
 if ~exist('b0','var') || isempty(b0);  b0  = 3; end
 
@@ -30,6 +30,6 @@ if ~exist('b0','var') || isempty(b0);  b0  = 3; end
 x_d = hcfm_effective_susceptibility(x_i,x_a,g);
 
 % Eq. A8
-t = 3 ./ ((abs(x_d).*sind(theta).^2)*2*pi*gyro*b0);
+t = 3 ./ (abs(x_d)*gyro*b0.*sin(theta).^2);
 
 end

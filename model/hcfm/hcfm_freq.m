@@ -5,7 +5,7 @@
 % x_i           : isotropic susceptibility (in ppm)
 % x_a           : anisotropic susceptibility (in ppm)
 % g             : g-ratio
-% theta         : angle between B0 and fibre direction (degree)
+% theta         : angle between B0 and fibre direction (rad)
 % E             : exchange (in ppm)
 % b0            : field strength (in T)
 %
@@ -33,8 +33,8 @@ if ~exist('E','var') || isempty(E);    E   = 0.02; end
 c1 = hcfm_c1(g);
 
 % Eq.[5]
-freq_myelin = ((x_i./2).*(2/3 - sind(theta).^2) + (x_a./2).*(c1.*sind(theta).^2 - 1/3) + E)*gyro*b0;
+freq_myelin = ((x_i./2).*(2/3 - sin(theta).^2) + (x_a./2).*(c1.*sin(theta).^2 - 1/3) + E)*gyro*b0;
 % Eq.[6]
-freq_axon = (3*x_a./4) .* sind(theta).^2 .* log(1./g) * gyro*b0;
+freq_axon = (3*x_a./4) .* sin(theta).^2 .* log(1./g) * gyro*b0;
 
 end
