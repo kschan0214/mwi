@@ -32,7 +32,11 @@
 %   (1) averaged two adjacent slices, weighted ls fitting with weight of
 %   magn (voxel-by-voxel)
 %   (2) averaged magn., angle of ROI-averaged complex data (ROI)
-% Results (perp./para.) using 16 echoes:
+% Resu created: 4 January 2018
+% Date last modified: 16 August 2018
+% Date last modified: 29 October 2019
+%
+%lts (perp./para.) using 16 echoes:
 %   - MWF           = 14.4/8.5 %
 %   - f_(my-ex)     = 11.1/2.5 Hz
 %
@@ -68,7 +72,7 @@ freq_ewbg = freq_ew + fbg;
 %%%%%%%%%% frequency shifts estimated using HCFM %%%%%%%%%%
 if DIMWI.isFreqMW || DIMWI.isFreqIW
     % derive g-ratio 
-    g = sqrt(Aiw/(Aiw+Amw/fixParam.rho_mw));
+    g = sqrt(abs(Aiw)/(abs(Aiw)+abs(Amw)/fixParam.rho_mw));
     % compute frequency shift given theta
     [freq_mw, freq_iw] = hcfm_freq(fixParam.x_i,fixParam.x_a,g,DIMWI.theta,fixParam.E,fixParam.b0);
     if DIMWI.isFreqMW 
@@ -86,7 +90,7 @@ if DIMWI.isR2sEW
     t2sew = t2siw;
     
     % derive fvf from signal intensity
-    v_ic = Aiw ./ (Aiw + Aew);
+    v_ic = abs(Aiw) ./ (abs(Aiw) + abs(Aew));
     fvf = v_ic ./ (g^2 - v_ic*g^2 + v_ic); 
     
     % signal dephase in extracellular water due to myelin sheath, Eq.[A7]

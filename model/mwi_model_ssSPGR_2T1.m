@@ -29,10 +29,7 @@
 % Date last modified: 
 %
 %% main
-function [ss,ss_pool] = mwi_model_ssSPGR_2T1(fa,tr,...
-                                      M0r,M0f,...
-                                      t1r,t1f,...
-                                      krf,kfr)
+function [ss,ss_pool] = mwi_model_ssSPGR_2T1(fa,tr,M0r,M0f,t1r,t1f,krf,kfr)
 
 % no. of flip angles
 nfa = length(fa);

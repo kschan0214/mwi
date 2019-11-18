@@ -39,6 +39,7 @@ disp('Myelin water imaing: 3-pool T2* model');
 DEBUG   = algoPara.DEBUG;
 
 %%%%%%%%%% capture all algorithm parameters %%%%%%%%%%
+isNormData = algoPara.isNormData;
 maxIter    = algoPara.maxIter;
 fcnTol     = algoPara.fcnTol;
 stepTol    = algoPara.stepTol;
@@ -51,7 +52,7 @@ userDefine = algoPara.userDefine;
 
 fitAlgor.numMagn    = algoPara.numMagn;
 fitAlgor.isWeighted = algoPara.isWeighted;
-fitAlgor.isNormCost = algoPara.isNormCost;
+% fitAlgor.isNormCost = algoPara.isNormCost;
 
 %%%%%%%%%% capture all image parameters %%%%%%%%%%
 te    = double(imgPara.te);
@@ -92,7 +93,6 @@ fixParam.rho_mw = double(imgPara.rho_mw);
 fixParam.E      = double(imgPara.E);
 fixParam.x_i    = double(imgPara.x_i);
 fixParam.x_a    = double(imgPara.x_a);
-
 DIMWI.fixParam = fixParam;
 
 [ny,nx,nz,~,~] = size(data);
@@ -115,6 +115,14 @@ mask    = and(mask>0,squeeze(sum(ff,4))>0);
 if DIMWI.isVic
     mask = and(mask>0,icvf>0);
 end
+
+if isNormData
+    tmp = abs(data(:,:,:,1));
+    scaleFactor = norm(tmp(mask>0)) / sqrt(length(find(mask>0)));
+else
+    scaleFactor = 1;
+end
+data = data / scaleFactor;
     
 mask    = reshape(mask,numel(mask),1);
 % find masked voxels
@@ -127,6 +135,9 @@ theta   = reshape(theta,numel(mask),size(theta,4)); theta   = theta(ind,:);
 ff      = reshape(ff,   numel(mask),size(ff,4));    ff      = ff(ind,:);
 
 numMaskedVoxel = length(ind);
+if numMaskedVoxel < numBatch
+    numBatch = 1;
+end
 nElement = floor(numMaskedVoxel/numBatch);
 for kbat = 1:numBatch
     startInd = (kbat-1)*nElement+1;
@@ -163,11 +174,11 @@ if isParallel
         ff      = data_obj(kbat).ff;
         
         % create an empty array for fitting results 
-        estimates = zeros(numel(fm),numEst);
-        resnorm   = zeros(numel(fm),1);
-        iter      = zeros(numel(fm),1);
-        exitflag  = zeros(numel(fm),1);
-        parfor k = 1:numel(fm)
+        estimates = zeros(size(data,1),numEst);
+        resnorm   = zeros(size(data,1),1);
+        iter      = zeros(size(data,1),1);
+        exitflag  = zeros(size(data,1),1);
+        parfor k = 1:size(data,1)
             % T2*w
             s       = data(k,:);
             db0     = fm(k);
@@ -184,7 +195,7 @@ if isParallel
         data_obj(kbat).resnorm   = resnorm;
         data_obj(kbat).iterations   = iter;
         data_obj(kbat).exitflag     = exitflag;
-        newlyFittedVoxel = numel(fm);
+        newlyFittedVoxel = size(data,1);
         % display progress
         [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel);
 
@@ -201,11 +212,11 @@ else
         ff      = data_obj(kbat).ff;
         
         %%%%%%%%%% create an empty array for fitting results %%%%%%%%%%
-        estimates = zeros(numel(fm),numEst);
-        resnorm   = zeros(numel(fm),1);
+        estimates = zeros(size(data,1),numEst);
+        resnorm   = zeros(size(data,1),1);
         iter      = zeros(size(data,1),1);
         exitflag  = zeros(size(data,1),1);
-        for k = 1:numel(fm)
+        for k = 1:size(data,1)
             % T2*w
             s       = data(k,:);
             db0     = fm(k);
@@ -221,7 +232,7 @@ else
         data_obj(kbat).resnorm   = resnorm;
         data_obj(kbat).iterations   = iter;
         data_obj(kbat).exitflag     = exitflag;
-        newlyFittedVoxel = numel(fm);
+        newlyFittedVoxel = size(data,1);
         % display progress
         [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel);
 
@@ -261,14 +272,19 @@ fitRes.resnorm   = resnorm;
 fitRes.iterations = iterations;
 fitRes.exitflag  = exitflag;
 fitRes.mask      = mask;
+if DIMWI.isVic
+    fitRes.estimates(:,:,:,1:2) = estimates(:,:,:,1:2)*scaleFactor;
+else
+    fitRes.estimates(:,:,:,1:3) = estimates(:,:,:,1:3)*scaleFactor;
+end
 
 counter = 1;
-fitRes.S0_MW = estimates(:,:,:,counter); counter = counter+1;
+fitRes.S0_MW = estimates(:,:,:,counter)*scaleFactor; counter = counter+1;
 if DIMWI.isVic
-    fitRes.S0_IEW = estimates(:,:,:,counter); counter = counter+1;
+    fitRes.S0_IEW = estimates(:,:,:,counter)*scaleFactor; counter = counter+1;
 else
-    fitRes.S0_IW = estimates(:,:,:,counter); counter = counter+1;
-    fitRes.S0_EW = estimates(:,:,:,counter); counter = counter+1;
+    fitRes.S0_IW = estimates(:,:,:,counter)*scaleFactor; counter = counter+1;
+    fitRes.S0_EW = estimates(:,:,:,counter)*scaleFactor; counter = counter+1;
 end
 fitRes.R2s_MW = estimates(:,:,:,counter); counter= counter + 1;
 fitRes.R2s_IW = estimates(:,:,:,counter); counter= counter + 1;
@@ -285,10 +301,10 @@ if fitAlgor.numMagn~=numel(te)
     fitRes.Freq_BKG = estimates(:,:,:,counter)/(2*pi); counter= counter + 1;
     fitRes.pini = estimates(:,:,:,counter);
 end
-if ~DIMWI.isFreqMW
+if ~DIMWI.isFreqMW && fitAlgor.numMagn~=numel(te)
     fitRes.Freq_MW = fitRes.Freq_MW - fitRes.Freq_BKG;
 end
-if ~DIMWI.isFreqIW
+if ~DIMWI.isFreqIW && fitAlgor.numMagn~=numel(te)
     fitRes.Freq_IW = fitRes.Freq_IW - fitRes.Freq_BKG;
 end
 
@@ -320,6 +336,13 @@ else
     mwf = 0.15;
     iwf = 0.6;
 end
+if fitAlgor.numMagn ~= numel(te)
+    w_mb0 = db0*2*pi;	w_mblb = (db0-25*b0)*2*pi;	w_mbub  = (db0+25*b0)*2*pi;
+    w_ib0 = db0*2*pi;	w_iblb = (db0-8*b0)*2*pi;	w_ibub  = (db0+8*b0)*2*pi;
+else
+    w_mb0 = 5*2*pi;	w_mblb = (5-25*b0)*2*pi;	w_mbub  = (5+25*b0)*2*pi;
+    w_ib0 = 0*2*pi;	w_iblb = (0-8*b0)*2*pi;     w_ibub  = (0+8*b0)*2*pi;
+end
 
 % volume fraction of intra-axonal water
 if DIMWI.isVic
@@ -344,18 +367,15 @@ if ~DIMWI.isR2sEW
     lb = double([lb,r2sewlb]);
     ub = double([ub,r2sewub]);
 end
+
 % Angular frequency of myelin water
 if ~DIMWI.isFreqMW
-    w_mb0 = db0*2*pi;	w_mblb = (db0-25*b0)*2*pi;	w_mbub  = (db0+25*b0)*2*pi;
-    
     x0 = double([x0,w_mb0]);
     lb = double([lb,w_mblb]);
     ub = double([ub,w_mbub]);
 end
 % Angular frequency of intra-axonal water
 if ~DIMWI.isFreqIW
-    w_ib0 = db0*2*pi;	w_iblb = (db0-8*b0)*2*pi;	w_ibub  = (db0+8*b0)*2*pi;
-    
     x0 = double([x0,w_ib0]);
     lb = double([lb,w_iblb]);
     ub = double([ub,w_ibub]);
@@ -476,16 +496,16 @@ else
 end
 err = computeFiter(s,sHat,fitAlgor.numMagn,w);
 
-% cost function is normalised with the norm of signal in order to provide
-% sort of consistence with fixed function tolerance
-if fitAlgor.isNormCost
-    err = err ./ norm(abs(s(:)));
-    % err = err ./ mean(abs(s(:)));
-end
+% % cost function is normalised with the norm of signal in order to provide
+% % sort of consistence with fixed function tolerance
+% if fitAlgor.isNormCost
+%     err = err ./ norm(abs(s(:)));
+%     % err = err ./ mean(abs(s(:)));
+% end
 
 % Debug module
 if DEBUG
-    Debug_display(s,sHat,err,te,x,numMagn);
+    Debug_display(s,sHat,err,te,x,fitAlgor.numMagn);
 end
 
 end
@@ -509,14 +529,16 @@ try algoPara2.maxIter           = algoPara.maxIter;     	catch; algoPara2.maxIte
 try algoPara2.fcnTol            = algoPara.fcnTol;      	catch; algoPara2.fcnTol = 1e-6; end
 % check step tolerance
 try algoPara2.stepTol           = algoPara.stepTol;     	catch; algoPara2.stepTol = 1e-6; end
+% check normalised data before fitting
+try algoPara2.isNormData        = algoPara.isNormData;  	catch; algoPara2.isNormData = true; end
 % check weighted sum of cost function
 try algoPara2.isWeighted        = algoPara.isWeighted;  	catch; algoPara2.isWeighted = true; end
 % check # of phase-corrupted echoes
 try algoPara2.numMagn           = algoPara.numMagn;         catch; algoPara2.numMagn = numel(imgPara.te); end
 % check # of phase-corrupted echoes
 try algoPara2.isInvivo          = algoPara.isInvivo;       	catch; algoPara2.isInvivo = true; end
-% check # of phase-corrupted echoes
-try algoPara2.isNormCost        = algoPara.isNormCost;      catch; algoPara2.isNormCost = true; end
+% % check # of phase-corrupted echoes
+% try algoPara2.isNormCost        = algoPara.isNormCost;      catch; algoPara2.isNormCost = true; end
 % check user bounds and initial guesses
 try algoPara2.userDefine.x0     = algoPara.userDefine.x0;   catch; algoPara2.userDefine.x0 = [];end
 try algoPara2.userDefine.lb     = algoPara.userDefine.lb;   catch; algoPara2.userDefine.lb = [];end
@@ -612,6 +634,12 @@ disp(['Exchange term (ppm)                      : ' num2str(imgPara2.E)]);
 
 %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
 disp('Fitting options:');
+disp('----------------');
+if algoPara2.isNormData
+    disp('GRE data is normalised before fitting');
+else
+    disp('GRE data is not normalised before fitting');
+end
 fprintf('Max. iterations    = %i\n',algoPara2.maxIter);
 fprintf('Function tolerance = %.2e\n',algoPara2.fcnTol);
 fprintf('Step tolerance     = %.2e\n',algoPara2.stepTol);
@@ -652,11 +680,11 @@ if algoPara2.isWeighted
 else
     disp('Cost function weighted by echo intensity: False');
 end
-if algoPara2.isNormCost
-    disp('Cost function is normalised by signal intensity: True');
-else
-    disp('Cost function is normalised by signal intensity: False');
-end
+% if algoPara2.isNormCost
+%     disp('Cost function is normalised by signal intensity: True');
+% else
+%     disp('Cost function is normalised by signal intensity: False');
+% end
 
 disp('Diffusion informed MWI model options:');
 if algoPara2.DIMWI.isVic
@@ -705,58 +733,62 @@ end
 function Debug_display(s,sHat,err,te,x,numMagn)
     global DEBUG_resnormAll
     DEBUG_resnormAll = [DEBUG_resnormAll;sum(err(:).^2)];
-    figure(99);
+    
+    if mod(numel(DEBUG_resnormAll), numel(x)) == 1
+    
+        figure(99);
 
-    if numMagn==numel(te)
-        subplot(2,2,1);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([min(abs(s(:)))*0.9,max(abs(s(:)))*1.1]); title('Magnitude');
-        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
-        subplot(2,2,2); 
-        plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.'); 
-        title('residual');
-        ha = subplot(2,2,3); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
-        uitable('Data',x(:),'Units',un,'Position',pos);
-        subplot(2,2,4);
-        plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
-        text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
-    else
-        subplot(2,3,1);
-        plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
-        plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
-        ylim([min(abs(s(:)))*0.9,max(abs(s(:)))*1.1]);
-        title('Magn.');
-        
-        subplot(2,3,2);
-        plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
-        plot(te(:).',angle(permute(sHat(:),[2 1])),'x-');hold off;
-        ylim([min(angle(s(:)))*0.9 max(angle(s(:)))*1.1]);
-        title('Phase');
-        
-        subplot(2,3,3);
-        plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
-        plot(te(:).',imag(permute(s,[2 1])),'ks-');
-        plot(te(:).',real(permute(sHat(:),[2 1])),'bx-.');
-        plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-.');hold off;
-        ylim([min([real(s(:));imag(s(:))]),max([real(s(:));imag(s(:))])*1.1]);
-        title('Real, Imaginary');
-        
-        subplot(2,3,4);
-        plot(te(:).',real(permute(sHat(:)-s(:),[2 1])),'rx-.');hold on;
-        plot(te(:).',imag(permute(sHat(:)-s(:),[2 1])),'r*-.');hold off;
-        title('Residual');
-        
-        ha = subplot(2,3,5); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
-        uitable('Data',x(:),'Units',un,'Position',pos);
-        
-        subplot(2,3,6);
-        plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
-        text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
+        if numMagn==numel(te)
+            subplot(2,2,1);plot(te(:).',abs(permute(s(:),[2 1])),'k^-');hold on;ylim([min(abs(s(:)))*0.9,max(abs(s(:)))*1.1]); title('Magnitude');
+            plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
+            subplot(2,2,2); 
+            plot(te(:).',(abs(permute(sHat(:),[2 1]))-abs(permute(s(:),[2 1]))),'ro-.'); 
+            title('residual');
+            ha = subplot(2,2,3); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
+            uitable('Data',x(:),'Units',un,'Position',pos);
+            subplot(2,2,4);
+            plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm')
+            text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
+        else
+            subplot(2,3,1);
+            plot(te(:).',abs(permute(s,[2 1])),'k^-');hold on;
+            plot(te(:).',abs(permute(sHat(:),[2 1])),'x-.');hold off;
+            ylim([min(abs(s(:)))*0.9,max(abs(s(:)))*1.1]);
+            title('Magn.');
+
+            subplot(2,3,2);
+            plot(te(:).',angle(permute(s,[2 1])),'k^-');hold on;
+            plot(te(:).',angle(permute(sHat(:),[2 1])),'x-');hold off;
+            ylim([min(angle(s(:)))-abs(min(angle(s(:))))*0.1, max(angle(s(:)))+abs(max(angle(s(:))))*0.1]);
+            title('Phase');
+
+            subplot(2,3,3);
+            plot(te(:).',real(permute(s,[2 1])),'k^-');hold on;
+            plot(te(:).',imag(permute(s,[2 1])),'ks-');
+            plot(te(:).',real(permute(sHat(:),[2 1])),'bx-.');
+            plot(te(:).',imag(permute(sHat(:),[2 1])),'b*-.');hold off;
+            ylim([min([real(s(:));imag(s(:))]),max([real(s(:));imag(s(:))])*1.1]);
+            title('Real, Imaginary');
+
+            subplot(2,3,4);
+            plot(te(:).',real(permute(sHat(:)-s(:),[2 1])),'rx-.');hold on;
+            plot(te(:).',imag(permute(sHat(:)-s(:),[2 1])),'r*-.');hold off;
+            title('Residual');
+
+            ha = subplot(2,3,5); pos = get(ha,'Position'); un = get(ha,'Units'); delete(ha)
+            uitable('Data',x(:),'Units',un,'Position',pos);
+
+            subplot(2,3,6);
+            plot(DEBUG_resnormAll);xlabel('# iterations');ylabel('resnorm');
+            text(0.5,0.5,sprintf('resnorm=%e',sum(err(:).^2)),'Units','normalized');
+        end
+        if length(DEBUG_resnormAll) <100
+            xlim([0 100]);
+        else
+            xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
+        end
+        drawnow;
     end
-    if length(DEBUG_resnormAll) <100
-        xlim([0 100]);
-    else
-        xlim([length(DEBUG_resnormAll)-100 length(DEBUG_resnormAll)]);
-    end
-    drawnow;
 end
 
 %% progress display
