@@ -50,7 +50,7 @@
 function s = mwi_model_3cc_dimwi(te,Amw,Aiw,Aew,t2smw,t2siw,t2sew,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI)
 
 %% validate input variables
-if nargin < 13
+if nargin < 13 || isempty(DIMWI)
 	DIMWI.isFreqMW  = false;
     DIMWI.isFreqIW  = false;
     DIMWI.isR2sEW   = false;

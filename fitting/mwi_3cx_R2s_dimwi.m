@@ -64,8 +64,8 @@ pini  = double(imgPara.pini);
 % check if intra-axonal water volume fraction is needed
 if DIMWI.isVic
     icvf = double(imgPara.icvf);
-else
-    icvf = zeros(size(mask));
+% else
+%     icvf = zeros(size(mask));
 end
 % check if fibre orientation is needed
 if DIMWI.isFreqMW || DIMWI.isFreqIW || DIMWI.isR2sEW
@@ -513,8 +513,8 @@ end
 %% check and set default
 function [algoPara2,imgPara2]=CheckAndSetDefault(algoPara,imgPara)
 
-imgPara2 = imgPara;
-algoPara2 = algoPara;
+imgPara2    = imgPara;
+algoPara2   = algoPara;
 
 %%%%%%%%%% 1. check algorithm parameters %%%%%%%%%%
 % check debug
@@ -523,14 +523,14 @@ try algoPara2.DEBUG             = algoPara.DEBUG;         	catch; algoPara2.DEBU
 try algoPara2.isParallel        = algoPara.isParallel;   	catch; algoPara2.isParallel = false; end
 % check maximum iterations allowed
 try algoPara2.numBatch          = algoPara.numBatch;     	catch; algoPara2.numBatch = 50; end
+% check normalised data before fitting
+try algoPara2.isNormData        = algoPara.isNormData;  	catch; algoPara2.isNormData = true; end
 % check maximum iterations allowed
 try algoPara2.maxIter           = algoPara.maxIter;     	catch; algoPara2.maxIter = 500; end
 % check function tolerance
 try algoPara2.fcnTol            = algoPara.fcnTol;      	catch; algoPara2.fcnTol = 1e-6; end
 % check step tolerance
 try algoPara2.stepTol           = algoPara.stepTol;     	catch; algoPara2.stepTol = 1e-6; end
-% check normalised data before fitting
-try algoPara2.isNormData        = algoPara.isNormData;  	catch; algoPara2.isNormData = true; end
 % check weighted sum of cost function
 try algoPara2.isWeighted        = algoPara.isWeighted;  	catch; algoPara2.isWeighted = true; end
 % check # of phase-corrupted echoes
@@ -550,48 +550,56 @@ try algoPara2.DIMWI.isR2sEW     = algoPara.DIMWI.isR2sEW;	catch; algoPara2.DIMWI
 try algoPara2.DIMWI.isVic       = algoPara.DIMWI.isVic;     catch; algoPara2.DIMWI.isVic    = false;end
 
 %%%%%%%%%% 2. check data integrity %%%%%%%%%%
+disp('-----------------------------');
+disp('Checking input data integrity');
+disp('-----------------------------');
 % check if the number of echo times matches with the data
 if length(imgPara.te) ~= size(imgPara.img,4)
-    error('The length of TE does not match with the last dimension of the image.');
+    error('The length of TE does not match with the 4th dimension of the image.');
 end
 % check signal mask
+disp('The following data is provided');
 try
     imgPara2.mask = imgPara.mask;
-    disp('Mask input: True');
+    disp('Mask                          : True');
 catch
     imgPara2.mask = max(max(abs(imgPara.img),[],4),[],5)./max(abs(imgPara.img(:))) > 0.05;
-    disp('Mask input: false');
+    disp('Mask                          : false');
 end
 % check field map
 try
     imgPara2.fieldmap = imgPara.fieldmap;
-    disp('Field map input: True');
+    disp('Field map                     : True');
 catch
     imgPara2.fieldmap = zeros(size(imgPara2.mask));
-    disp('Field map input: False');
+    disp('Field map                     : False');
 end
 % check initial phase map
 try
     imgPara2.pini = imgPara.pini;
-    disp('Initial phase input: True');
+    disp('Initial phase input           : True');
 catch
-    imgPara2.pini = ones(size(imgPara2.mask))*nan;
-    disp('Initial phase input: False');
+    imgPara2.pini = angle(exp(1i*(-2*pi*imgPara2.fieldmap*imgPara2.te(1)-angle(imgPara2.data(:,:,:,1)))));
+    disp('Initial phase input           : False');
 end
 % check volume fraction of intra-axonal water
 try
     imgPara2.icvf = imgPara.icvf;
-    disp('Volume fraction of intra-axonal water input: True');
+    disp('Volume fraction of intra-axonal water input   : True');
+catch
+    imgPara2.icvf = zeros(size(imgPara2.mask));
+    algoPara2.DIMWI.isVic = false;
+    disp('Volume fraction of intra-axonal water input   : false');
 end
 % check fibre orientation map
 try
     imgPara2.fo = imgPara.fo;
-    disp('Fibre orientation input: True');
+    disp('Fibre orientation input                       : True');
 catch
     try
         imgPara2.theta = imgPara.theta;
-        disp('Fibre orientation input: False');
-        disp('Theta input: True');
+        disp('Fibre orientation input                       : False');
+        disp('Theta input                       : True');
     catch
         if algoPara2.DIMWI.isFreqMW || algoPara2.DIMWI.isFreqIW || algoPara2.DIMWI.isR2sEW
             error('Fibre orienation map or theta map is required for DIMWI');
@@ -601,10 +609,10 @@ end
 % B0 direction
 try
     imgPara2.b0dir = imgPara.b0dir;
-    disp('B0dir input: True');
+    disp('B0dir input                   : True');
 catch
     imgPara2.b0dir = [0,0,1];
-    disp('B0dir input: false');
+    disp('B0dir input                   : false');
 end
 % field strength
 try imgPara2.b0     = imgPara.b0;       catch; imgPara2.b0 = 3; end
@@ -612,15 +620,7 @@ try imgPara2.rho_mw = imgPara.rho_mw;   catch; imgPara2.rho_mw = 0.43; end
 try imgPara2.x_i    = imgPara.x_i;    	catch; imgPara2.x_i = -0.1; end
 try imgPara2.x_a    = imgPara.x_a;     	catch; imgPara2.x_a = -0.1; end
 try imgPara2.E      = imgPara.E;     	catch; imgPara2.E = 0.02; end
-disp('Parameter to be fixed:')
-disp('----------------------')
-disp(['Field strength (T)                       : ' num2str(imgPara2.b0)]);
-disp(['Relative myelin water density            : ' num2str(imgPara2.rho_mw)]);
-disp(['Myelin isotropic susceptibility (ppm)    : ' num2str(imgPara2.x_i)]);
-disp(['Myelin anisotropic susceptibility (ppm)  : ' num2str(imgPara2.x_a)]);
-disp(['Exchange term (ppm)                      : ' num2str(imgPara2.E)]);
-
-
+disp('Input data is valid.')
 % % check intra-aonxal water volume fraction map
 % try
 %     imgPara2.v_ic = imgPara.v_ic;
@@ -633,48 +633,50 @@ disp(['Exchange term (ppm)                      : ' num2str(imgPara2.E)]);
 % end
 
 %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
-disp('Fitting options:');
-disp('----------------');
+disp('---------------');
+disp('Fitting options');
+disp('---------------');
 if algoPara2.isNormData
     disp('GRE data is normalised before fitting');
 else
     disp('GRE data is not normalised before fitting');
 end
-fprintf('Max. iterations    = %i\n',algoPara2.maxIter);
-fprintf('Function tolerance = %.2e\n',algoPara2.fcnTol);
-fprintf('Step tolerance     = %.2e\n',algoPara2.stepTol);
-% type of fitting
-if algoPara2.numMagn==0
-    disp('Fitting complex model with complex data');
-elseif algoPara2.numMagn==numel(imgPara2.te)
-    disp('Fitting complex model with magnitude data');
-else
-    fprintf('Fitting complex model with %i magnitude data and %i complex data\n',algoPara2.numMagn,numel(imgPara2.te)-algoPara2.numMagn);
-end
+fprintf('Max. iterations    : %i\n',algoPara2.maxIter);
+fprintf('Function tolerance : %.2e\n',algoPara2.fcnTol);
+fprintf('Step tolerance     : %.2e\n',algoPara2.stepTol);
 % initial guess and fitting bounds
 if isempty(algoPara2.userDefine.x0)
-    disp('Default initial guess: True');
+    disp('Default initial guess     : True');
 else
-    disp('Default initial guess: False');
+    disp('Default initial guess     : False');
 end
 if isempty(algoPara2.userDefine.lb)
-    disp('Default lower bound: True');
+    disp('Default lower bound       : True');
 else
-    disp('Default lower bound: False');
+    disp('Default lower bound       : False');
 end
 if isempty(algoPara2.userDefine.ub)
-    disp('Default upper bound: True');
+    disp('Default upper bound       : True');
 else
-    disp('Default upper bound: False');
+    disp('Default upper bound       : False');
 end
 % initial guess for in-vivo case
 if algoPara2.isInvivo
-    disp('Initial guesses for in vivo study');
+    disp('Initial guesses for in-vivo study');
 else
-    disp('Initial guesses for ex vivo study');
+    disp('Initial guesses for ex-vivo study');
 end
-
-disp('Cost function options:');
+disp('---------------------');
+disp('Cost function options');
+disp('---------------------');
+% type of fitting
+if algoPara2.numMagn==0
+    disp('Fitting with complex data');
+elseif algoPara2.numMagn==numel(imgPara2.te)
+    disp('Fitting with magnitude data');
+else
+    fprintf('Fitting with %i magnitude data and %i complex data\n',algoPara2.numMagn,numel(imgPara2.te)-algoPara2.numMagn);
+end
 if algoPara2.isWeighted
     disp('Cost function weighted by echo intensity: True');
 else
@@ -685,12 +687,13 @@ end
 % else
 %     disp('Cost function is normalised by signal intensity: False');
 % end
-
-disp('Diffusion informed MWI model options:');
+disp('------------------------------------');
+disp('Diffusion informed MWI model options');
+disp('------------------------------------');
 if algoPara2.DIMWI.isVic
-    disp('Volume fraction of intra-aonxal water is provided');
+    disp('Volume fraction of intra-aonxal water will be used');
 else
-    disp('Volume fraction of intra-aonxal water is NOT provided');
+    disp('Volume fraction of intra-aonxal water will not be used');
 end
 if algoPara2.DIMWI.isFreqMW
     disp('Frequency - myelin water estimated by HCFM');
@@ -707,6 +710,14 @@ if algoPara2.DIMWI.isR2sEW
 else
     disp('R2* - extra-cellular water to be fitted');
 end
+disp('---------------------')
+disp('Parameter to be fixed')
+disp('---------------------')
+disp(['Field strength (T)                       : ' num2str(imgPara2.b0)]);
+disp(['Relative myelin water density            : ' num2str(imgPara2.rho_mw)]);
+disp(['Myelin isotropic susceptibility (ppm)    : ' num2str(imgPara2.x_i)]);
+disp(['Myelin anisotropic susceptibility (ppm)  : ' num2str(imgPara2.x_a)]);
+disp(['Exchange term (ppm)                      : ' num2str(imgPara2.E)]);
 
 % determine the number of estimates
 numEst = 4; % basic setting has 4 estimates

@@ -24,10 +24,7 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 28 February 2018
-% Date modified: 16 August 2018
-% Date modified: 6 March 2019
-% Date modified: 22 October 2019
-% Date modified: 29 October 2019
+% Date modified: 
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
 disp('Myelin water imaing: 3-pool T1-T2* model');
