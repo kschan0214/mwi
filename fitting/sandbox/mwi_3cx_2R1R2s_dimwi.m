@@ -308,7 +308,7 @@ end
 fitRes.T1_MW = estimates(:,:,:,counter); counter= counter + 1;
 fitRes.T1_OW = estimates(:,:,:,counter); counter= counter + 1;
 if epgx.isExchange
-    fitRes.kom = estimates(:,:,:,counter); counter= counter + 1;
+    fitRes.kfwm = estimates(:,:,:,counter); counter= counter + 1;
 end
 if ~DIMWI.isFreqMW
     fitRes.Freq_MW = estimates(:,:,:,counter)/(2*pi); counter= counter + 1;
@@ -330,7 +330,11 @@ if DEBUG
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
 end
-[~,rho0] = DESPOT1(abs(s(1,:)),fa,tr,'b1',b10);
+[t10,rho0] = DESPOT1(abs(s(1,:)),fa,tr,'b1',b10);
+
+if t10<0 || t10 > 10 || isnan(t10) || isinf(t10)
+    t10 = 1;
+end
 
 b0 = DIMWI.fixParam.b0;
 
@@ -339,12 +343,12 @@ if isInvivo
     % range for in vivo
     r2smw0 = 100;	r2smwlb = 40;	r2smwub = 300;
     r2siw0 = 16;	r2siwlb = 6;	r2siwub = 40;
-    r2sew0 = 21;	r2sewlb = 6;	r2sewub = 40;
+    r2sew0 = 21;	r2sewlb = 6;	r2sewub = 50;
     mwf = 0.1;
     iwf = 0.6;
-    t1s0   = 225e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
-    t1l0   = 1.1;     	t1llb   = 1.1; 	t1lub   = 1.1;
-    kls0   = 2;       	klslb   = 0;      	klsub   = 6;       % exchange rate from long T1 to short T1
+    t1s0   = 234e-3;  	t1slb   = 234e-3;  	t1sub   = 234e-3;
+    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = t10+1;
+    kls0   = 0;       	klslb   = 0;      	klsub   = 20;       % exchange rate from long T1 to short T1
 else
     % range for ex vivo
     r2smw0 = 150;	r2smwlb = 40;	r2smwub = 300;
@@ -392,19 +396,19 @@ end
 
 % Angular frequency of myelin water
 if ~DIMWI.isFreqMW
-    w_mb0 = 5*2*pi;	w_mblb = (5-25*b0)*2*pi;	w_mbub  = (5+25*b0)*2*pi;
+    w_mw0 = 5*2*pi;	w_mwlb = (-5*b0)*2*pi;	w_mwub  = (5+10*b0)*2*pi;
     
-    x0 = double([x0,w_mb0]);
-    lb = double([lb,w_mblb]);
-    ub = double([ub,w_mbub]);
+    x0 = double([x0,w_mw0]);
+    lb = double([lb,w_mwlb]);
+    ub = double([ub,w_mwub]);
 end
 % Angular frequency of intra-axonal water
 if ~DIMWI.isFreqIW
-    w_ib0 = -2*2*pi;	w_iblb = (-2-8*b0)*2*pi;	w_ibub  = (-2+8*b0)*2*pi;
+    w_iw0 = -2*2*pi;	w_iwlb = (-2-8*b0)*2*pi;	w_iwub  = (-2+8*b0)*2*pi;
     
-    x0 = double([x0,w_ib0]);
-    lb = double([lb,w_iblb]);
-    ub = double([ub,w_ibub]);
+    x0 = double([x0,w_iw0]);
+    lb = double([lb,w_iwlb]);
+    ub = double([ub,w_iwub]);
 end
 
 % extra parameters that depended on fitting method
@@ -761,9 +765,9 @@ else
     disp('Frequency - intra-axonal water to be fitted');
 end
 if algoPara2.DIMWI.isR2sEW
-    disp('R2* - extra-cellular water estimated by HCFM');
+    disp('R2*       - extra-cellular water estimated by HCFM');
 else
-    disp('R2* - extra-cellular water to be fitted');
+    disp('R2*       - extra-cellular water to be fitted');
 end
 
 disp('-------------------------------')

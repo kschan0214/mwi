@@ -251,7 +251,57 @@ for kbat=1:numBatch
 end
 
 % reshape fitting results back to map
-estimates           = zeros(ny*nx*nz,numEst);
+estimates           = zeros(ny*nx*nz,numEst);load_module_mwi;
+load_module_sepia;sepia_addpath;
+clear;
+
+%%
+subj_name = 'sub-01';
+gre_dir = ['/project/3015069.03/derived/' subj_name '/gre/'];
+mask_fn = [subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain_mask.nii.gz'];
+tissue_fn = [subj_name '_anat_t1_fsl_anat_brain_fast_seg_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+output_prefix   = [subj_name '_gre_fa-20_standard_nsa-7'];
+output_dir      = [gre_dir 'mwi/dwi_informed_mwi/'];
+
+gre_dir = ['/project/3015069.03/derived/' subj_name '/gre/'];
+anat_dir = ['/project/3015069.03/derived/' subj_name '/anat/'];
+anat_result_dir = [anat_dir 'results/'];
+dwi_mcmicro_dir = ['/project/3015069.03/derived/' subj_name '/dwi/high-res/mcmicro/'];
+dwi_bedpostx_dir = ['/project/3015069.03/derived/' subj_name '/dwi/high-res/bedpostx/'];
+
+intraNeurite_fn = [subj_name '_dwi_high-res_eddy_smt-mcmicro_intra_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+v1_fn = [subj_name '_dwi_high-res_eddy_bedpostx_dyads1_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+v2_fn = [subj_name '_dwi_high-res_eddy_bedpostx_dyads2_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+v3_fn = [subj_name '_dwi_high-res_eddy_bedpostx_dyads3_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+f1_fn = [subj_name '_dwi_high-res_eddy_bedpostx_mean_f1samples_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+f2_fn = [subj_name '_dwi_high-res_eddy_bedpostx_mean_f2samples_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+f3_fn = [subj_name '_dwi_high-res_eddy_bedpostx_mean_f3samples_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain.nii.gz'];
+
+load([gre_dir subj_name '_gre_fa-20_average-04_header']);
+load([gre_dir 'phase_correction/' subj_name '_gre_fa-20_corrected-phase_GMbased'],'allEchoPhase_rm_eddy','pini_fitted','totalField_static');
+
+img = zeros([matrixSize length(TE) 7]);
+for knsa = 1:7
+    real_fn = [subj_name '_gre_fa-20_average-0' num2str(knsa) '_real_unring_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain_ants.nii.gz'];
+    imag_fn = [subj_name '_gre_fa-20_average-0' num2str(knsa) '_imag_unring_2_' subj_name '_gre_fa-20_average-04_magn_unring_echo-01_brain_ants.nii.gz'];
+    
+    img(:,:,:,:,knsa) = load_nii_img_only([gre_dir real_fn]) + 1i*load_nii_img_only([gre_dir imag_fn]);
+    
+end
+
+img = abs(img) .* exp(1i*allEchoPhase_rm_eddy);
+
+mask_nii = load_untouch_nii([gre_dir mask_fn]);
+mask = mask_nii.img;
+tissue = load_nii_img_only([anat_result_dir tissue_fn]);
+
+icvf = load_nii_img_only([dwi_mcmicro_dir intraNeurite_fn]);
+v(:,:,:,:,1) = load_nii_img_only([dwi_bedpostx_dir v1_fn]);
+v(:,:,:,:,2) = load_nii_img_only([dwi_bedpostx_dir v2_fn]);
+v(:,:,:,:,3) = load_nii_img_only([dwi_bedpostx_dir v3_fn]);
+ff(:,:,:,1) = load_nii_img_only([dwi_bedpostx_dir f1_fn]);
+ff(:,:,:,2) = load_nii_img_only([dwi_bedpostx_dir f2_fn]);
+ff(:,:,:,3) = load_nii_img_only([dwi_bedpostx_dir f3_fn]);
 resnorm             = zeros(ny*nx*nz,1);
 iterations          = zeros(ny*nx*nz,1);
 exitflag            = zeros(ny*nx*nz,1);
