@@ -55,7 +55,9 @@ fitAlgor.weightMethod = algoPara.weightMethod;
 epgx.npulse       = algoPara.npulse;
 epgx.rfphase      = algoPara.rfphase;
 epgx.isExchange   = algoPara.isExchange;
+epgx.isT1mw       = algoPara.isT1mw;
 epgx.isEPG        = algoPara.isEPG;
+epgx.T1mw         = algoPara.T1mw;
 
 %%%%%%%%%% capture all image parameters %%%%%%%%%%
 te    = double(imgPara.te);
@@ -122,6 +124,7 @@ mask    = and(mask>0,squeeze(sum(ff,4))>0);
 if DIMWI.isVic
     mask = and(mask>0,icvf>0);
 end
+fitRes.mask      = mask;
 
 if isNormData
     tmp = max(abs(data(:,:,:,1,:)),[],5);
@@ -285,7 +288,6 @@ fitRes.estimates = estimates;
 fitRes.resnorm   = resnorm;
 fitRes.iterations= iterations;
 fitRes.exitflag  = exitflag;
-fitRes.mask      = mask;
 if DIMWI.isVic
     fitRes.estimates(:,:,:,1:2) = estimates(:,:,:,1:2)*scaleFactor;
 else
@@ -305,10 +307,12 @@ fitRes.R2s_IW = estimates(:,:,:,counter); counter= counter + 1;
 if ~DIMWI.isR2sEW
     fitRes.R2s_EW = estimates(:,:,:,counter); counter= counter + 1;
 end
-fitRes.T1_MW = estimates(:,:,:,counter); counter= counter + 1;
-fitRes.T1_OW = estimates(:,:,:,counter); counter= counter + 1;
+if epgx.isT1mw
+    fitRes.T1_MW = estimates(:,:,:,counter); counter= counter + 1;
+end
+fitRes.T1_IEW = estimates(:,:,:,counter); counter= counter + 1;
 if epgx.isExchange
-    fitRes.kfwm = estimates(:,:,:,counter); counter= counter + 1;
+    fitRes.kiewm = estimates(:,:,:,counter); counter= counter + 1;
 end
 if ~DIMWI.isFreqMW
     fitRes.Freq_MW = estimates(:,:,:,counter)/(2*pi); counter= counter + 1;
@@ -335,6 +339,9 @@ end
 if t10<0 || t10 > 10 || isnan(t10) || isinf(t10)
     t10 = 1;
 end
+if rho0<0 || isinf(rho0) || isnan(rho0)
+    rho0 = max(abs(s(:)))*10;
+end
 
 b0 = DIMWI.fixParam.b0;
 
@@ -346,7 +353,7 @@ if isInvivo
     r2sew0 = 21;	r2sewlb = 6;	r2sewub = 50;
     mwf = 0.1;
     iwf = 0.6;
-    t1s0   = 234e-3;  	t1slb   = 234e-3;  	t1sub   = 234e-3;
+    t1s0   = 234e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
     t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = t10+1;
     kls0   = 0;       	klslb   = 0;      	klsub   = 20;       % exchange rate from long T1 to short T1
 else
@@ -357,8 +364,8 @@ else
     mwf = 0.15;
     iwf = 0.6;
     t1s0   = 225e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
-    t1l0   = 1.07;     	t1llb   = 500e-3; 	t1lub   = 3000e-3;
-    kls0    = 2;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = t10+1;
+    kls0    = 0;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
 end
 
 % volume fraction of intra-axonal water
@@ -385,9 +392,14 @@ if ~DIMWI.isR2sEW
     ub = [ub,r2sewub];
 end
 % T1 and exchange
-x0 = [x0,t1s0,t1l0];
-lb = [lb,t1slb,t1llb];
-ub = [ub,t1sub,t1lub];
+if epgx.isT1mw
+    x0 = [x0,t1s0];
+    lb = [lb,t1slb];
+    ub = [ub,t1sub];
+end
+x0 = [x0,t1l0];
+lb = [lb,t1llb];
+ub = [ub,t1lub];
 if epgx.isExchange
     x0 = [x0,kls0];
     lb = [lb,klslb];
@@ -485,7 +497,11 @@ else
     t2sew = t2siw;
 end
 % T1
-t1s = x(counter);   counter = counter + 1;
+if epgx.isT1mw
+    t1s = x(counter);   counter = counter + 1;
+else
+    t1s = epgx.T1mw; 
+end
 t1l = x(counter);   counter = counter + 1;
 if epgx.isExchange
     kls = x(counter);   counter = counter + 1;
@@ -543,7 +559,7 @@ else
     w = ones(size(s));
 end
 
-err = computeFiter(s,sHat,fitAlgor.numMagn,w);
+err = computeFiter(s.',sHat.',fitAlgor.numMagn,w.');
 
 % % cost function is normalised with the norm of signal in order to provide
 % % sort of consistence with fixed function tolerance
@@ -573,11 +589,11 @@ try algoPara2.isParallel        = algoPara.isParallel;   	catch; algoPara2.isPar
 % check number of batches for parfor 
 try algoPara2.numBatch          = algoPara.numBatch;     	catch; algoPara2.numBatch = 50; end
 % check maximum iterations allowed
-try algoPara2.maxIter           = algoPara.maxIter;     	catch; algoPara2.maxIter = 500; end
+try algoPara2.maxIter           = algoPara.maxIter;     	catch; algoPara2.maxIter = 200; end
 % check function tolerance
-try algoPara2.fcnTol            = algoPara.fcnTol;      	catch; algoPara2.fcnTol = 1e-6; end
+try algoPara2.fcnTol            = algoPara.fcnTol;      	catch; algoPara2.fcnTol = 1e-5; end
 % check step tolerance
-try algoPara2.stepTol           = algoPara.stepTol;     	catch; algoPara2.stepTol = 1e-6; end
+try algoPara2.stepTol           = algoPara.stepTol;     	catch; algoPara2.stepTol = 1e-5; end
 % check normalised data before fitting
 try algoPara2.isNormData        = algoPara.isNormData;  	catch; algoPara2.isNormData = true; end
 % check weighted sum of cost function
@@ -599,6 +615,8 @@ try algoPara2.DIMWI.isR2sEW     = algoPara.DIMWI.isR2sEW;	catch; algoPara2.DIMWI
 try algoPara2.DIMWI.isVic       = algoPara.DIMWI.isVic;     catch; algoPara2.DIMWI.isVic    = false;end
 % EPG-X
 try algoPara2.isExchange        = algoPara.isExchange;      catch; algoPara2.isExchange = false; end
+try algoPara2.isT1mw            = algoPara.isT1mw;          catch; algoPara2.isT1mw     = false; end
+try algoPara2.T1mw              = algoPara.T1mw;            catch; algoPara2.T1mw       = 234e-3; end % Du et al. 2014 PLOS ONE
 try algoPara2.isEPG             = algoPara.isEPG;           catch; algoPara2.isEPG      = false; end
 try algoPara2.rfphase           = algoPara.rfphase;       	catch; algoPara2.rfphase    = 50; end
 try algoPara2.npulse            = algoPara.npulse;       	catch; algoPara2.npulse     = 50; end
@@ -738,6 +756,12 @@ if algoPara2.isExchange
 else
     disp('Exchange - False');
 end
+if algoPara2.isT1mw
+    disp('T1mw - True');
+else
+    disp('T1mw - False');
+    fprintf('T1mw will be fixed as %.3f s\n',algoPara2.T1mw);
+end
 if algoPara2.isEPG
     disp('EPG - True');
     fprintf('No. of RF pulses to equilibrium: %i\n', algoPara2.npulse);
@@ -781,8 +805,11 @@ disp(['Myelin anisotropic susceptibility (ppm)  : ' num2str(imgPara2.x_a)]);
 disp(['Exchange term (ppm)                      : ' num2str(imgPara2.E)]);
 
 % determine the number of estimates
-numEst = 6; % basic setting has 6 estimates
+numEst = 5; % basic setting has 6 estimates
 if algoPara2.isExchange
+    numEst = numEst + 1;
+end
+if algoPara2.isT1mw
     numEst = numEst + 1;
 end
 if ~algoPara2.DIMWI.isVic
