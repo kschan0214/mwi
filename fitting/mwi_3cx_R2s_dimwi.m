@@ -593,7 +593,7 @@ try
     imgPara2.pini = imgPara.pini;
     disp('Initial phase input           : True');
 catch
-    imgPara2.pini = angle(exp(1i*(-2*pi*imgPara2.fieldmap*imgPara2.te(1)-angle(imgPara2.data(:,:,:,1)))));
+    imgPara2.pini = angle(exp(1i*(-2*pi*imgPara2.fieldmap*imgPara2.te(1)-angle(imgPara2.img(:,:,:,1)))));
     disp('Initial phase input           : False');
 end
 % check volume fraction of intra-axonal water
