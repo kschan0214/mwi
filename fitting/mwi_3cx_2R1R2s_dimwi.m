@@ -63,6 +63,13 @@
 % 	.E      	: exchange effect in signal phase, in ppm
 % 	.x_i      	: myelin isotropic susceptibility, in ppm
 % 	.x_a      	: myelin anisotropic susceptibility, in ppm
+% Output setting
+% ==============
+%   .output_dir      : directory to store final results (default:
+%                      '/current_directory/mwi_results/')
+%   .output_filename : output filename in text string (default:
+%                      'mwi_results.mat')
+%   .identifier      : temporary file identifier, a 8-digit code
 %
 % Output
 % --------------
@@ -95,10 +102,67 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 28 February 2018
-% Date modified: 5 Nov 2020
+% Date modified: 11 Nov 2020
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
+rng('shuffle');
+
+%%%%%%%%%% create directory for temporary results %%%%%%%%%%
+if isfield(imgPara,'output_dir')
+    output_dir = imgPara.output_dir;
+else
+    output_dir    = fullfile(pwd,'mwi_results');
+end
+if isfield(imgPara,'output_filename')
+    output_filename = imgPara.output_filename;
+    [~,output_filename,~] = fileparts(output_filename);
+    output_filename = [output_filename '.mat'];
+else
+    output_filename = 'mwi_mcr_results.mat';
+end
+temp_fn     = fullfile(output_dir,'temp_mwi_mcr_');
+if ~exist(output_dir,'dir')
+    mkdir(output_dir)
+end
+if isfield(imgPara,'identifier')
+    % get temporary file identifier if provided
+    identifier = imgPara.identifier;
+    % check if the temporary file exists
+    if ~exist([temp_fn identifier '.mat'],'file')
+        error('Cannot detect the temporary file. Please enter a valid identifier or remove the input identifier');
+    end
+else
+    % create a new identifier if not provided
+    identifier = [];
+    % make sure the identifier is unique
+    while isempty(identifier) || exist([temp_fn identifier '.mat'],'file')
+        identifier = num2str(randi(9));
+        for k = 2:8; identifier = append(identifier,num2str(randi(9))); end
+        identifier = num2str(identifier);
+    end
+end
+temp_fn = [temp_fn identifier '.mat'];
+
+% log command window display to a text file
+logFilename = fullfile(output_dir, ['run_mwi_' identifier '.log']);
+if exist(logFilename,'file') == 2
+    counter = 1;
+    while exist(logFilename,'file') == 2
+        suffix = ['_' num2str(counter)];
+        logFilename = fullfile(output_dir, ['run_mwi_' identifier suffix '.log']);
+        counter = counter + 1;
+    end
+end
+diary(logFilename)
+
+try
+
+fprintf('Output directory : %s\n',output_dir);
+fprintf('Intermediate results identifier : %s\n',identifier);
+
+disp('========================================');
 disp('Myelin water imaing: MCR/MCR-DIMWI model');
+disp('========================================');
 
 %%%%%%%%%% validate algorithm and image parameters %%%%%%%%%%
 [algoPara,imgPara] = CheckAndSetDefault(algoPara,imgPara);
@@ -145,9 +209,12 @@ b1map = double(imgPara.b1map);
 
 % basic info regarding data size
 dims    = size(mask);
+if ndims(dims) < 3
+    dims(ndims(dims)+1:3) = 1;
+end
 nVoxel  = numel(mask);
 nTE     = length(te);
-nFA     = lengt(fa);
+nFA     = length(fa);
 
 %%%%%%%%%% DIMWI %%%%%%%%%%
 % check if intra-axonal water volume fraction is needed
@@ -203,7 +270,7 @@ mask    = and(mask>0,squeeze(sum(ff,4))>0);
 if DIMWI.isVic
     mask = and(mask>0,icvf>0);
 end
-fitRes.mask      = mask;
+fitRes.mask_fitted = mask;
 
 if isNormData
     tmp = max(abs(data(:,:,:,1,:)),[],5);
@@ -234,14 +301,14 @@ if numMaskedVoxel < numBatch || numMaskedVoxel < 200
     % update nElement
     nElement = floor(numMaskedVoxel/numBatch);
 end
+% avoid too many voxels per batch which waits long to update progress
+while nElement > 500 && numBatch <=5000
+    numBatch = numBatch + 50;
+    nElement = floor(numMaskedVoxel/numBatch);
+end
 % avoid too few voxels per batch which reduces parallel computing efficiency
 while nElement < 20 && numBatch ~= 1
     numBatch = round(numBatch/2);
-    nElement = floor(numMaskedVoxel/numBatch);
-end
-% avoid too many voxels per batch which waits long to update progress
-while nElement > 5000 || numBatch <=1000
-    numBatch = numBatch + 50;
     nElement = floor(numMaskedVoxel/numBatch);
 end
 % get final no. of voxles per batch
@@ -263,16 +330,25 @@ for kbat = 1:numBatch
 end
 
 %%%%%%%%%% initiate progress display %%%%%%%%%%
-numFittedVoxel = 0;
 fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
-progress='0 %%';
-fprintf('Progress: ');
-fprintf(progress);
+if exist(temp_fn,'file')
+    % restore progress
+    disp('Restoring previous progress...')
+    load(temp_fn);
+    isRestore = true;
+else
+    % new progress
+    fbat = 0;
+    lastBatchEndTime = nElement *8; %roughly 8s for 1 voxel
+    isRestore = false;
+end
+progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
+isRestore = false;
 
 %%%%%%%%%% fitting main %%%%%%%%%%
 if isParallel
     %%%%%%%%%% parfor loop %%%%%%%%%%
-    for kbat = 1:numBatch
+    for kbat = (fbat+1):numBatch
         
         data    = data_obj(kbat).data;
         fm      = data_obj(kbat).fm;
@@ -282,6 +358,8 @@ if isParallel
         ff      = data_obj(kbat).ff;
         b1map   = data_obj(kbat).b1map;
         
+        % start timer
+        tic;
         % create an empty array for fitting results 
         estimates = zeros(size(data,1),numEst);
         resnorm   = zeros(size(data,1),1);
@@ -300,19 +378,24 @@ if isParallel
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
                 FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,db0,pini0,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
         end
+        lastBatchEndTime = toc;
+        
+        % Finished batch number
+        fbat = kbat;
         
         res_obj(kbat).estimates    = estimates;
         res_obj(kbat).resnorm      = resnorm;
         res_obj(kbat).iterations   = iter;
         res_obj(kbat).exitflag     = exitflag;
-        newlyFittedVoxel = size(data,1);
+        
         % display progress
-        [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel);
+        progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
+        save(temp_fn,'res_obj','fbat','lastBatchEndTime')
 
     end
 else
     %%%%%%%%%% ordinary for loop %%%%%%%%%%
-    for kbat=1:numBatch
+    for kbat=(fbat+1):numBatch
         
         data    = data_obj(kbat).data;
         fm      = data_obj(kbat).fm;
@@ -322,6 +405,8 @@ else
         ff      = data_obj(kbat).ff;
         b1map   = data_obj(kbat).b1map;
         
+        % start timer
+        tic;
         % create an empty array for fitting results 
         estimates = zeros(size(data,1),numEst);
         resnorm   = zeros(size(data,1),1);
@@ -340,15 +425,20 @@ else
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
                 FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,db0,pini0,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
         end
+        lastBatchEndTime = toc;
+        
+        % Finished batch number
+        fbat = kbat;
         
         res_obj(kbat).estimates    = estimates;
         res_obj(kbat).resnorm      = resnorm;
         res_obj(kbat).iterations   = iter;
         res_obj(kbat).exitflag     = exitflag;
-        newlyFittedVoxel = size(data,1);
+        
         % display progress
-        [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel);
-
+        progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
+        save(temp_fn,'res_obj','fbat','lastBatchEndTime')
+        
     end
 end
 fprintf('\n');
@@ -374,16 +464,17 @@ estimates(ind,:)    = tmp1;
 resnorm(ind)        = tmp2;
 iterations(ind)     = tmp3;
 exitflag(ind)       = tmp4;
-estimates           = reshape(estimates,dim(1),dim(2),dim(3),numEst);
-resnorm             = reshape(resnorm,dim(1),dim(2),dim(3));
-iterations          = reshape(iterations,dim(1),dim(2),dim(3));
-exitflag            = reshape(exitflag,dim(1),dim(2),dim(3));
+estimates           = reshape(estimates,dims(1),dims(2),dims(3),numEst);
+resnorm             = reshape(resnorm,dims(1),dims(2),dims(3));
+iterations          = reshape(iterations,dims(1),dims(2),dims(3));
+exitflag            = reshape(exitflag,dims(1),dims(2),dims(3));
 
 %%%%%%%%%% Saving result %%%%%%%%%%
-fitRes.estimates = estimates;
-fitRes.resnorm   = resnorm;
-fitRes.iterations= iterations;
-fitRes.exitflag  = exitflag;
+fitRes.estimates    = estimates;
+fitRes.resnorm      = resnorm;
+fitRes.iterations   = iterations;
+fitRes.exitflag     = exitflag;
+fitRes.mask_fitted  = and(exitflag ~= 99,fitRes.mask_fitted>0);
 if DIMWI.isVic
     fitRes.estimates(:,:,:,1:2) = estimates(:,:,:,1:2)*scaleFactor;
 else
@@ -421,6 +512,39 @@ if fitAlgor.numMagn~=numel(te)
     fitRes.pini = estimates(:,:,:,counter+length(fa):end);
 end
 
+save(fullfile(output_dir,output_filename),'fitRes','-v7.3');
+delete(temp_fn)
+disp('Done!');
+
+diary off
+
+catch ME
+    
+    % close log file
+    disp('There was an error! Please check the command window/error message file for more information.');
+    diary off
+    
+    % open a new text file for error message
+    errorMessageFilename = fullfile(output_dir, ['run_mwi_' identifier '.error']);
+    if exist(errorMessageFilename,'file') == 2
+        counter = 1;
+        while exist(errorMessageFilename,'file') == 2
+            suffix = ['_' num2str(counter)];
+            errorMessageFilename = fullfile(output_dir, ['run_mwi_' identifier suffix '.error']);
+            counter = counter + 1;
+        end
+    end
+    fid = fopen(errorMessageFilename,'w');
+    fprintf(fid,'The identifier was:\n%s\n\n',ME.identifier);
+    fprintf(fid,'The message was:\n\n');
+    msgString = getReport(ME,'extended','hyperlinks','off');
+    fprintf(fid,'%s',msgString);
+    fclose(fid);
+    
+    % rethrow the error message to command window
+    rethrow(ME);
+end
+
 end
 
 %% Setup lsqnonlin and fit with the default model
@@ -430,9 +554,11 @@ if DEBUG
     global DEBUG_resnormAll
     DEBUG_resnormAll=[];
 end
+
+try 
 [t10,rho0] = DESPOT1(abs(s(1,:)),fa,tr,'b1',b10);
 
-if t10<0 || t10 > 10 || isnan(t10) || isinf(t10)
+if t10<500e-3 || t10 > 10 || isnan(t10) || isinf(t10)
     t10 = 1;
 end
 if rho0<0 || isinf(rho0) || isnan(rho0)
@@ -523,7 +649,7 @@ end
 if fitAlgor.numMagn~=numel(te) % non magnitude fittingfalse
 
     w_bg0 = db0(:).'*2*pi;	w_bglb = (db0(:).'-8*b0)*2*pi;      w_bgub  = (db0(:).'+8*b0)*2*pi;
-    pini00 = pini0(:).';    pinilb = ones(size(pini0))*(-2*pi);	piniub  = ones(size(pini0))*2*pi;
+    pini00 = pini0(:).';    pinilb = ones(size(pini0))*(-pi);	piniub  = ones(size(pini0))*pi;
 %     w_bg0 = db0*2*pi;	w_bglb = (db0-25)*2*pi;	w_bgub  = (db0+25)*2*pi;
 %     if isnan(pini0)
 %         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
@@ -568,6 +694,14 @@ end
 [x,res,~,exitflag,output] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,options);
 
 iterations = output.iterations;
+
+catch 
+    x           = zeros(size(x0));
+    res         = 0 ;
+    exitflag    = 99;
+    iterations  = 0;
+end
+
 end
 
 %% compute the cost function of the optimisation problem
@@ -683,7 +817,7 @@ try algoPara2.DEBUG             = algoPara.DEBUG;         	catch; algoPara2.DEBU
 % check parallel computing 
 try algoPara2.isParallel        = algoPara.isParallel;   	catch; algoPara2.isParallel = false; end
 % check number of batches for parfor 
-try algoPara2.numBatch          = algoPara.numBatch;     	catch; algoPara2.numBatch = 50; end
+try algoPara2.numBatch          = algoPara.numBatch;     	catch; algoPara2.numBatch = 100; end
 % check maximum iterations allowed
 try algoPara2.maxIter           = algoPara.maxIter;     	catch; algoPara2.maxIter = 200; end
 % check function tolerance
@@ -741,7 +875,7 @@ try
     imgPara2.fieldmap = imgPara.fieldmap;
     disp('Field map input           : True');
 catch
-    imgPara2.fieldmap = zeros(size(imgPara2.mask));
+    imgPara2.fieldmap = zeros([size(imgPara2.mask) length(imgPara.fa)]);
     disp('Field map input           : False');
 end
 % check initial phase map
@@ -781,11 +915,11 @@ catch
     disp('B0dir input: false');
 end
 % field strength
-try imgPara2.b0     = imgPara.b0;       catch; imgPara2.b0 = 3; end
-try imgPara2.rho_mw = imgPara.rho_mw;   catch; imgPara2.rho_mw = 0.43; end
-try imgPara2.x_i    = imgPara.x_i;    	catch; imgPara2.x_i = -0.1; end
-try imgPara2.x_a    = imgPara.x_a;     	catch; imgPara2.x_a = -0.1; end
-try imgPara2.E      = imgPara.E;     	catch; imgPara2.E = 0.02; end
+try imgPara2.b0     = imgPara.b0;       catch; imgPara2.b0      = 3; end
+try imgPara2.rho_mw = imgPara.rho_mw;   catch; imgPara2.rho_mw  = 0.43; end
+try imgPara2.x_i    = imgPara.x_i;    	catch; imgPara2.x_i     = -0.1; end
+try imgPara2.x_a    = imgPara.x_a;     	catch; imgPara2.x_a     = -0.1; end
+try imgPara2.E      = imgPara.E;     	catch; imgPara2.E       = 0.02; end
 disp('Input data is valid.')
 
 %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
@@ -848,14 +982,14 @@ disp('--------------------------');
 disp('Multi-compartment T1 model');
 disp('--------------------------');
 if algoPara2.isExchange
-    disp('Exchange - True');
+    disp('Exchange - to be fitted');
 else
-    disp('Exchange - False');
+    disp('Exchange - no exchange');
 end
 if algoPara2.isT1mw
-    disp('T1mw - True');
+    disp('T1mw - to be fitted');
 else
-    disp('T1mw - False');
+    disp('T1mw - fixed');
     fprintf('T1mw will be fixed as %.3f s\n',algoPara2.T1mw);
 end
 if algoPara2.isEPG
@@ -863,7 +997,7 @@ if algoPara2.isEPG
     fprintf('No. of RF pulses to equilibrium: %i\n', algoPara2.npulse);
     fprintf('Initial RF phase               : %i\n', algoPara2.rfphase);
 else
-    disp('EPG - False');
+    disp('EPG - no EPG simulation');
 end
 
 disp('------------------------------------');
@@ -990,21 +1124,23 @@ function Debug_display(s,sHat,err,te,x,numMagn)
 end
 
 %% progress display
-function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel)
+function progress_display(numBatch,fbat,lastBatchEndTime,isRestore)
+% function [progress,numFittedVoxel] = progress_display(progress,numMaskedVoxel,numFittedVoxel,newlyFittedVoxel)
 % function [progress] = progress_display(progress,numMaskedVoxel,kind)
 
-previous_progress_percentage    = floor(numFittedVoxel*100/numMaskedVoxel);
+previous_progress_percentage    = 100*(fbat-1)/numBatch;
+current_progress_percentage     = 100*fbat/numBatch;
+% estimatedTime = current time for 1 batch * remaninig batches
+estimatedTime = seconds(lastBatchEndTime*(numBatch-fbat));
 
-% update number of non zeros element in the current mask
-numFittedVoxel = numFittedVoxel + newlyFittedVoxel;
-
-current_progress_percentage = floor(numFittedVoxel*100/numMaskedVoxel);
-
-if previous_progress_percentage ~= current_progress_percentage
+if fbat ~= 0 && ~isRestore
+    previous_progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', previous_progress_percentage,datestr(estimatedTime, 'HH:MM'));
     % delete previous progress
-    for ii=1:length(progress)-1; fprintf('\b'); end
-    % display current progress
-    progress=sprintf('%d %%%%', floor(numFittedVoxel*100/numMaskedVoxel));
-    fprintf(progress);
+    for ii=1:length(previous_progress)-1; fprintf('\b'); end
 end
+
+% display current progress
+progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', current_progress_percentage,datestr(estimatedTime, 'HH:MM'));
+fprintf(progress);
+
 end
