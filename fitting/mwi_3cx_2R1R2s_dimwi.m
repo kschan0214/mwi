@@ -5,6 +5,8 @@
 % algoPara      : structure array contains all fitting algorithm specific
 %                 parameters
 %   .isInvivo   : initial starting points for in vivo study
+%   .isFastEPG  : speed up the fitting by running a non EPG fitting first
+%                 and use the results as the initial guesses of EPG fitting 
 %   .isParallel : parallel computing using parfor
 %   .userDefine : user defined starting set of estimated parameters
 % Fitting algorithm option
@@ -34,6 +36,11 @@
 % 	.DIMWI.isR2sEW   : true - use DIMWI to account for extra-axonal R2*; false - no DIMWI
 % 	.DIMWI.isFreqMW  : true - use DIMWI to account for myelin water frequency; false - no DIMWI
 % 	.DIMWI.isFreqIW  : true - use DIMWI to account for intra-axonal frequency; false - no DIMWI
+% Advanced Starting point strategy
+% ================================
+%	.advancedStarting : 'default' - estimated S0 and T2s IEW from data
+%                       'robust' - estimated S0 from data only
+%                       otherwise fixed starting points for 3T
 %
 % imgPara       : structure array contains all image data
 % Image-based
@@ -69,7 +76,16 @@
 %                      '/current_directory/mwi_results/')
 %   .output_filename : output filename in text string (default:
 %                      'mwi_results.mat')
-%   .identifier      : temporary file identifier, a 8-digit code
+%   .identifier      : temporary file identifier, a 8-digit code (optional)
+%   .autoSave        : true (default); false - won't save anything after
+%                      fitting
+% Advanced Starting point strategy
+% ================================
+%	.advancedStarting.isAdvancedStarting : true - estimated starting points	from data
+%                                          false - fixed starting points for 3T
+%	.advancedStarting.method             : 'default' - estimated S0 and T2s	IEW from data
+%                                          'robust' - estimated S0 from
+%                                          data only
 %
 % Output
 % --------------
@@ -87,7 +103,7 @@
 %   .R2s_EW 	: IW R2*, in s^-1 (MCR)
 %   .T1_MW      : MW T1, in second (fitted)
 %   .T1_IEW     : IEW T1, in second
-%   .kiewm      : exchange rate, in s^-1
+%   .kiewm      : exchange rate, in s^-1 (fitted)
 %   .Freq_MW    : MW frequency, in Hz (MCR)
 %   .Freq_IW    : IW frequency, in Hz (MCR)
 %   .Freq_BKG   : Background frequency map, in Hz (complex-valued fitting)
@@ -95,69 +111,31 @@
 %
 % Description: Myelin water mapping using MCR or MCR-DIMWI model
 % Chan, K.-S., Marques, J.P., 2020. Multi-compartment relaxometry and 
-% diffusion informed myelin water imaging ? promises and challenges of 
+% diffusion informed myelin water imaging - promises and challenges of 
 % new gradient echo myelin water imaging methods. Neuroimage 221, 117159. 
 % https://doi.org/10.1016/j.neuroimage.2020.117159
 %
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 28 February 2018
-% Date modified: 11 Nov 2020
+% Date modified: 17 Nov 2020
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
-rng('shuffle');
 
 %%%%%%%%%% create directory for temporary results %%%%%%%%%%
-if isfield(imgPara,'output_dir')
-    output_dir = imgPara.output_dir;
-else
-    output_dir    = fullfile(pwd,'mwi_results');
-end
-if isfield(imgPara,'output_filename')
-    output_filename = imgPara.output_filename;
-    [~,output_filename,~] = fileparts(output_filename);
-    output_filename = [output_filename '.mat'];
-else
-    output_filename = 'mwi_mcr_results.mat';
-end
-temp_fn     = fullfile(output_dir,'temp_mwi_mcr_');
-if ~exist(output_dir,'dir')
-    mkdir(output_dir)
-end
-if isfield(imgPara,'identifier')
-    % get temporary file identifier if provided
-    identifier = imgPara.identifier;
-    % check if the temporary file exists
-    if ~exist([temp_fn identifier '.mat'],'file')
-        error('Cannot detect the temporary file. Please enter a valid identifier or remove the input identifier');
-    end
-else
-    % create a new identifier if not provided
-    identifier = [];
-    % make sure the identifier is unique
-    while isempty(identifier) || exist([temp_fn identifier '.mat'],'file')
-        identifier = num2str(randi(9));
-        for k = 2:8; identifier = append(identifier,num2str(randi(9))); end
-        identifier = num2str(identifier);
-    end
-end
-temp_fn = [temp_fn identifier '.mat'];
+default_output_filename = 'mwi_mcr_results.mat';
+temp_prefix             = 'temp_mwi_mcr_';
+[output_dir, output_filename, temp_filename, identifier] = set_up_output(imgPara,default_output_filename,temp_prefix);
 
-% log command window display to a text file
+%%%%%%%%%% log command window display to a text file %%%%%%%%%%
 logFilename = fullfile(output_dir, ['run_mwi_' identifier '.log']);
-if exist(logFilename,'file') == 2
-    counter = 1;
-    while exist(logFilename,'file') == 2
-        suffix = ['_' num2str(counter)];
-        logFilename = fullfile(output_dir, ['run_mwi_' identifier suffix '.log']);
-        counter = counter + 1;
-    end
-end
+logFilename = check_unique_filename_seqeunce(logFilename);
 diary(logFilename)
 
+% main
 try
 
-fprintf('Output directory : %s\n',output_dir);
+fprintf('Output directory                : %s\n',output_dir);
 fprintf('Intermediate results identifier : %s\n',identifier);
 
 disp('========================================');
@@ -183,9 +161,10 @@ DIMWI      = algoPara.DIMWI;
 userDefine = algoPara.userDefine;
 
 % data fitting method related parameters
-fitAlgor.numMagn    = algoPara.numMagn;
-fitAlgor.isWeighted = algoPara.isWeighted;
-fitAlgor.weightMethod = algoPara.weightMethod;
+fitAlgor.numMagn        = algoPara.numMagn;
+fitAlgor.isWeighted     = algoPara.isWeighted;
+fitAlgor.weightMethod   = algoPara.weightMethod;
+fitAlgor.isFastEPG      = algoPara.isFastEPG;
 % fitAlgor.isNormCost = algoPara.isNormCost;
 
 % EPG-X related parameters
@@ -208,10 +187,7 @@ pini  = double(imgPara.pini);
 b1map = double(imgPara.b1map);
 
 % basic info regarding data size
-dims    = size(mask);
-if ndims(dims) < 3
-    dims(ndims(dims)+1:3) = 1;
-end
+dims    = size(data);   dims = dims(1:3);
 nVoxel  = numel(mask);
 nTE     = length(te);
 nFA     = length(fa);
@@ -270,17 +246,47 @@ mask    = and(mask>0,squeeze(sum(ff,4))>0);
 if DIMWI.isVic
     mask = and(mask>0,icvf>0);
 end
-fitRes.mask_fitted = mask;
 
 if isNormData
-    tmp = max(abs(data(:,:,:,1,:)),[],5);
-    scaleFactor = norm(tmp(mask>0)) / sqrt(length(find(mask>0)));
+    [scaleFactor, data] = mwi_image_normalisation(data, mask);
+%     tmp = max(abs(data(:,:,:,1,:)),[],5);
+%     scaleFactor = norm(tmp(mask>0)) / sqrt(length(find(mask>0)));
 else
     scaleFactor = 1;
 end
-data = data / scaleFactor;
+% data = data / scaleFactor;
 
-mask    = reshape(mask,numel(mask),1);
+%%%%%%%%%% check advanced starting point strategy %%%%%%%%%%
+advancedStarting = algoPara.advancedStarting;
+if strcmpi(advancedStarting,'default') || strcmpi(advancedStarting,'robust')
+    disp('Pre-estimate starting points using predefined model')
+    % 3T
+    if fixParam.b0 > 2.5 && fixParam.b0 < 3.5
+        t2s_pre = [10e-3,60e-3];    % [T2sMW, T2sIEW] in second
+        t1_pre  = [234e-3, 1];    	% [T1MW, IEW], in second
+    end
+    
+    switch advancedStarting
+        case 'default'
+            [s00,mwf0,t2siew0,t1iew0] = superfast_mwi_2m_mcr_self(data,te,fa,tr,t2s_pre,t1_pre(1),mask,b1map,'superfast');
+        case 'robust'
+            [s00,mwf0] = superfast_mwi_2m_mcr(data,te,fa,tr,t2s_pre,t1_pre,mask,b1map);
+    end
+    s00 = sum(s00,4); % total water
+end
+% Simple DESPOT1 T1 mapping
+if ~exist('t1iew0','var')
+    [t1iew0, m0] = despot1_mapping(permute(data(:,:,:,1,:),[1 2 3 5 4]),fa,tr,mask,b1map);
+    if ~exist('s00','var')
+        s00 = m0;
+        % also masked out DESPOT1 problematic voxels
+        mask = and(mask,s00 ~= 0);
+    end
+end
+
+fitRes.mask_fitted = mask;
+
+mask    = reshape(mask,nVoxel,1);
 % find masked voxels
 ind     = find(mask~=0);
 data   	= reshape(data, nVoxel,nTE,nFA);            data    = data(ind,:,:);
@@ -290,6 +296,10 @@ icvf    = reshape(icvf, nVoxel,1);                	icvf	= icvf(ind);
 theta   = reshape(theta,nVoxel,size(theta,4));     	theta   = theta(ind,:);
 ff      = reshape(ff,   nVoxel,size(ff,4));       	ff      = ff(ind,:);
 b1map 	= reshape(b1map,nVoxel,1);                	b1map  	= b1map(ind);
+s00     = reshape(s00,nVoxel,1);                    s00     = s00(ind);
+t1iew0  = reshape(t1iew0,nVoxel,1);                 t1iew0  = t1iew0(ind); 
+if exist('mwf0','var');     mwf0    = reshape(mwf0,nVoxel,1);     	mwf0    = mwf0(ind); end
+if exist('t2siew0','var');	t2siew0 = reshape(t2siew0,nVoxel,1);    t2siew0 = t2siew0(ind); end
 
 % repackaging for progress reporting and temporary storage
 numMaskedVoxel = length(ind);
@@ -320,21 +330,26 @@ for kbat = 1:numBatch
     else
         endInd      = length(ind);
     end
-    data_obj(kbat).data	= data(startInd:endInd,:,:);
-    data_obj(kbat).fm	= fm(startInd:endInd,:);
-    data_obj(kbat).pini	= pini(startInd:endInd,:);
-    data_obj(kbat).icvf	= icvf(startInd:endInd);
-    data_obj(kbat).theta= theta(startInd:endInd,:);
-    data_obj(kbat).ff  	= ff(startInd:endInd,:);
-    data_obj(kbat).b1map= b1map(startInd:endInd);
+    data_obj(kbat).data     = data(startInd:endInd,:,:);
+    data_obj(kbat).icvf     = icvf(startInd:endInd);
+    data_obj(kbat).theta    = theta(startInd:endInd,:);
+    data_obj(kbat).ff       = ff(startInd:endInd,:);
+    data_obj(kbat).b1map    = b1map(startInd:endInd);
+    data_obj(kbat).fm       = fm(startInd:endInd,:);
+    data_obj(kbat).pini     = pini(startInd:endInd,:);
+    data_obj(kbat).s00      = s00(startInd:endInd);
+    data_obj(kbat).t1iew0	= t1iew0(startInd:endInd);
+    if exist('mwf0','var');     data_obj(kbat).mwf0     = mwf0(startInd:endInd); end
+    if exist('t2siew0','var');	data_obj(kbat).t2siew0	= t2siew0(startInd:endInd); end
+    
 end
 
 %%%%%%%%%% initiate progress display %%%%%%%%%%
 fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
-if exist(temp_fn,'file')
+if exist(temp_filename,'file')
     % restore progress
     disp('Restoring previous progress...')
-    load(temp_fn);
+    load(temp_filename);
     isRestore = true;
 else
     % new progress
@@ -351,12 +366,23 @@ if isParallel
     for kbat = (fbat+1):numBatch
         
         data    = data_obj(kbat).data;
-        fm      = data_obj(kbat).fm;
-        pini    = data_obj(kbat).pini;
+%         fm      = data_obj(kbat).fm;
+%         pini    = data_obj(kbat).pini;
         icvf    = data_obj(kbat).icvf;
         theta   = data_obj(kbat).theta;
         ff      = data_obj(kbat).ff;
         b1map   = data_obj(kbat).b1map;
+        
+        for k = 1:size(data,1)
+            
+            initialGuess(k).pini0   = data_obj(kbat).pini(k,:);   % initial phase
+            initialGuess(k).db0     = data_obj(kbat).fm(k,:);     % fieldmap
+            initialGuess(k).s00     = data_obj(kbat).s00(k);
+            initialGuess(k).t1iew0  = data_obj(kbat).t1iew0(k);
+            
+            if isfield(data_obj,'mwf0');    initialGuess(k).mwf0    = data_obj(kbat).mwf0(k); end
+            if isfield(data_obj,'t2siew0'); initialGuess(k).t2siew0 = data_obj(kbat).t2siew0(k); end
+        end
         
         % start timer
         tic;
@@ -368,15 +394,16 @@ if isParallel
         parfor k = 1:size(data,1)
             % T2*w
             s       = squeeze(data(k,:,:));
-            db0     = squeeze(fm(k,:));
-            pini0   = squeeze(pini(k,:));
+%             db0     = squeeze(fm(k,:));
+%             pini0   = squeeze(pini(k,:));
             icvf0   = icvf(k);
             theta0  = squeeze(theta(k,:));  theta0  = theta0(:);
             ff0     = squeeze(ff(k,:));     ff0     = ff0(:);
             b10     = b1map(k);
+            initGuess = initialGuess(k);
 
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
-                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,db0,pini0,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
+                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
         end
         lastBatchEndTime = toc;
         
@@ -390,7 +417,7 @@ if isParallel
         
         % display progress
         progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
-        save(temp_fn,'res_obj','fbat','lastBatchEndTime')
+        save(temp_filename,'res_obj','fbat','lastBatchEndTime')
 
     end
 else
@@ -398,12 +425,23 @@ else
     for kbat=(fbat+1):numBatch
         
         data    = data_obj(kbat).data;
-        fm      = data_obj(kbat).fm;
-        pini    = data_obj(kbat).pini;
+%         fm      = data_obj(kbat).fm;
+%         pini    = data_obj(kbat).pini;
         icvf    = data_obj(kbat).icvf;
         theta   = data_obj(kbat).theta;
         ff      = data_obj(kbat).ff;
         b1map   = data_obj(kbat).b1map;
+        
+        for k = 1:size(data,1)
+            
+            initialGuess(k).pini0   = data_obj(kbat).pini(k,:);   % initial phase
+            initialGuess(k).db0     = data_obj(kbat).fm(k,:);     % fieldmap
+            initialGuess(k).s00     = data_obj(kbat).s00(k);
+            initialGuess(k).t1iew0  = data_obj(kbat).t1iew0(k);
+            
+            if isfield(data_obj,'mwf0');    initialGuess(k).mwf0    = data_obj(kbat).mwf0(k); end
+            if isfield(data_obj,'t2siew0'); initialGuess(k).t2siew0 = data_obj(kbat).t2siew0(k); end
+        end
         
         % start timer
         tic;
@@ -415,15 +453,16 @@ else
         for k = 1:size(data,1)
             % T2*w
             s       = squeeze(data(k,:,:));
-            db0     = squeeze(fm(k,:));
-            pini0   = squeeze(pini(k,:));
+%             db0     = squeeze(fm(k,:));
+%             pini0   = squeeze(pini(k,:));
             icvf0   = icvf(k);
             theta0  = squeeze(theta(k,:));  theta0  = theta0(:);
             ff0     = squeeze(ff(k,:));     ff0     = ff0(:);
             b10     = b1map(k);
+            initGuess = initialGuess(k);
 
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
-                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,db0,pini0,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
+                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
         end
         lastBatchEndTime = toc;
         
@@ -437,7 +476,7 @@ else
         
         % display progress
         progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
-        save(temp_fn,'res_obj','fbat','lastBatchEndTime')
+        save(temp_filename,'res_obj','fbat','lastBatchEndTime')
         
     end
 end
@@ -464,10 +503,10 @@ estimates(ind,:)    = tmp1;
 resnorm(ind)        = tmp2;
 iterations(ind)     = tmp3;
 exitflag(ind)       = tmp4;
-estimates           = reshape(estimates,dims(1),dims(2),dims(3),numEst);
-resnorm             = reshape(resnorm,dims(1),dims(2),dims(3));
-iterations          = reshape(iterations,dims(1),dims(2),dims(3));
-exitflag            = reshape(exitflag,dims(1),dims(2),dims(3));
+estimates           = reshape(estimates,[dims,numEst]);
+resnorm             = reshape(resnorm,dims);
+iterations          = reshape(iterations,dims);
+exitflag            = reshape(exitflag,dims);
 
 %%%%%%%%%% Saving result %%%%%%%%%%
 fitRes.estimates    = estimates;
@@ -512,8 +551,10 @@ if fitAlgor.numMagn~=numel(te)
     fitRes.pini = estimates(:,:,:,counter+length(fa):end);
 end
 
-save(fullfile(output_dir,output_filename),'fitRes','-v7.3');
-delete(temp_fn)
+if imgPara.autoSave
+    save(output_filename,'fitRes','-v7.3');
+end
+delete(temp_filename)
 disp('Done!');
 
 diary off
@@ -526,14 +567,7 @@ catch ME
     
     % open a new text file for error message
     errorMessageFilename = fullfile(output_dir, ['run_mwi_' identifier '.error']);
-    if exist(errorMessageFilename,'file') == 2
-        counter = 1;
-        while exist(errorMessageFilename,'file') == 2
-            suffix = ['_' num2str(counter)];
-            errorMessageFilename = fullfile(output_dir, ['run_mwi_' identifier suffix '.error']);
-            counter = counter + 1;
-        end
-    end
+    errorMessageFilename = check_unique_filename_seqeunce(errorMessageFilename);
     fid = fopen(errorMessageFilename,'w');
     fprintf(fid,'The identifier was:\n%s\n\n',ME.identifier);
     fprintf(fid,'The message was:\n\n');
@@ -548,7 +582,7 @@ end
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res,exitflag,iterations] = FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,db0,pini0,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG)
+function [x,res,exitflag,iterations] = FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initialGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
@@ -556,28 +590,38 @@ if DEBUG
 end
 
 try 
-[t10,rho0] = DESPOT1(abs(s(1,:)),fa,tr,'b1',b10);
+    
+db0     = initialGuess.db0;
+pini0   = initialGuess.pini0;
+rho0    = max(initialGuess.s00,max(abs(s(:)))); % start with highest S0 possible
+t1iew0  = initialGuess.t1iew0;
+if isfield(initialGuess,'mwf0');    mwf     = min(initialGuess.mwf0,0.3); end % maximum starting MWF is 30%
+if isfield(initialGuess,'t2siew0');	r2siew0	= 1/initialGuess.t2siew0; end 
 
-if t10<500e-3 || t10 > 10 || isnan(t10) || isinf(t10)
-    t10 = 1;
-end
-if rho0<0 || isinf(rho0) || isnan(rho0)
-    rho0 = max(abs(s(:)))*10;
-end
+% [t10,rho0] = DESPOT1(abs(s(1,:)),fa,tr,'b1',b10);
+% if t10<500e-3 || t10 > 10 || isnan(t10) || isinf(t10)
+%     t10 = 1;
+% end
+% if rho0<0 || isinf(rho0) || isnan(rho0)
+%     rho0 = max(abs(s(:)))*10;
+% end
 
 b0 = DIMWI.fixParam.b0;
 
 %%%%%%%%%% Step 1: determine and set initial guesses  %%%%%%%%%%
 if isInvivo
-    % range for in vivo
-    r2smw0 = 100;	r2smwlb = 40;	r2smwub = 300;
-    r2siw0 = 16;	r2siwlb = 6;	r2siwub = 40;
-    r2sew0 = 21;	r2sewlb = 6;	r2sewub = 50;
-    mwf = 0.1;
-    iwf = 0.6;
-    t1s0   = 234e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
-    t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = t10+1;
-    kls0   = 0;       	klslb   = 0;      	klsub   = 20;       % exchange rate from long T1 to short T1
+    % range for in vivo, for 3T
+    
+%     r2smw0 = 100;	r2smwlb = 40;	r2smwub = 300;
+%     r2siw0 = 16;	r2siwlb = 6;	r2siwub = 40;
+%     r2sew0 = 21;	r2sewlb = 6;	r2sewub = 50;
+%     iwf = 0.6;
+%     t1slb   = 50e-3;  	t1sub   = 650e-3;   t1s0   = 234e-3;  	
+%     t1llb   = 500e-3; 	t1lub   = t10+1;    t1l0   = t10;     	
+%     kls0   = 0;       	klslb   = 0;      	klsub   = 20;       % exchange rate from long T1 to short T1
+
+    mwi_setup_initial_guess_3T_invivo;
+
 else
     % range for ex vivo
     r2smw0 = 150;	r2smwlb = 40;	r2smwub = 300;
@@ -588,7 +632,12 @@ else
     t1s0   = 225e-3;  	t1slb   = 50e-3;  	t1sub   = 650e-3;
     t1l0   = t10;     	t1llb   = 500e-3; 	t1lub   = t10+1;
     kls0    = 0;       	klslb    = 0;      	klsub    = 6;       % exchange rate from long T1 to short T1
+    v_ic = 0.8;
+    iwf = (1-mwf)*v_ic;
+    ewf = 1-mwf-iwf;
 end
+
+
 
 % volume fraction of intra-axonal water
 if DIMWI.isVic
@@ -599,9 +648,9 @@ if DIMWI.isVic
     lb = [Amylb,Aielb,r2smwlb,r2siwlb];
     ub = [Amyub,Aieub,r2smwub,r2siwub];
 else
-    Amy0 = mwf*rho0;           Amylb = 0;	Amyub = 1.5*rho0;
-    Aiw0 = iwf*rho0;           Aiwlb = 0;	Aiwub = 1.5*rho0;
-    Aew0 = (1-mwf-iwf)*rho0;  	Aewlb = 0;	Aewub = 1.5*rho0;
+    Amy0 = mwf*rho0;            Amylb = 0;	Amyub = 1.5*rho0;
+    Aiw0 = iwf*rho0;            Aiwlb = 0;	Aiwub = 1.5*rho0;
+    Aew0 = ewf*rho0;            Aewlb = 0;	Aewub = 1.5*rho0;
     
     x0 = [Amy0 ,Aiw0 ,Aew0, r2smw0 ,r2siw0 ];
     lb = [Amylb,Aiwlb,Aewlb,r2smwlb,r2siwlb];
@@ -691,7 +740,20 @@ if epgx.isExchange && epgx.isEPG
 end
 
 %%%%%%%%%% Step 3: run fitting algorithm  %%%%%%%%%%
-[x,res,~,exitflag,output] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,options);
+% [x,res,~,exitflag,output] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,options);
+
+if fitAlgor.isFastEPG && epgx.isEPG
+    % temporarily disable EPG
+    epgx.isEPG = false;
+    option_pre = options;
+    option_pre.MaxIterations = 10;
+    [x0,~,~,~,~] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,option_pre);
+    % restore EPG option
+    epgx.isEPG = true;
+    [x,res,~,exitflag,output] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,options);
+else
+    [x,res,~,exitflag,output] = lsqnonlin(@(y)CostFunc(y,s,te,tr,fa,b10,epgx,DIMWI,fitAlgor,DEBUG),x0,lb,ub,options);
+end
 
 iterations = output.iterations;
 
@@ -816,6 +878,8 @@ algoPara2   = algoPara;
 try algoPara2.DEBUG             = algoPara.DEBUG;         	catch; algoPara2.DEBUG = false; end
 % check parallel computing 
 try algoPara2.isParallel        = algoPara.isParallel;   	catch; algoPara2.isParallel = false; end
+% fast fitting when EPG enabled
+try algoPara2.isFastEPG       	= algoPara.isFastEPG;    	catch; algoPara2.isFastEPG = false; end
 % check number of batches for parfor 
 try algoPara2.numBatch          = algoPara.numBatch;     	catch; algoPara2.numBatch = 100; end
 % check maximum iterations allowed
@@ -850,6 +914,8 @@ try algoPara2.T1mw              = algoPara.T1mw;            catch; algoPara2.T1m
 try algoPara2.isEPG             = algoPara.isEPG;           catch; algoPara2.isEPG      = false; end
 try algoPara2.rfphase           = algoPara.rfphase;       	catch; algoPara2.rfphase    = 50; end
 try algoPara2.npulse            = algoPara.npulse;       	catch; algoPara2.npulse     = 50; end
+% check advanced starting points strategy
+try algoPara2.advancedStarting  = algoPara.advancedStarting;catch; algoPara2.advancedStarting = [];end
 
 %%%%%%%%%% 2. check data integrity %%%%%%%%%%
 disp('-----------------------');
@@ -920,6 +986,8 @@ try imgPara2.rho_mw = imgPara.rho_mw;   catch; imgPara2.rho_mw  = 0.43; end
 try imgPara2.x_i    = imgPara.x_i;    	catch; imgPara2.x_i     = -0.1; end
 try imgPara2.x_a    = imgPara.x_a;     	catch; imgPara2.x_a     = -0.1; end
 try imgPara2.E      = imgPara.E;     	catch; imgPara2.E       = 0.02; end
+
+try imgPara2.autoSave = imgPara.autoSave; catch; imgPara2.autoSave = true; end
 disp('Input data is valid.')
 
 %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
@@ -930,6 +998,12 @@ if algoPara2.isNormData
     disp('GRE data is normalised before fitting');
 else
     disp('GRE data is not normalised before fitting');
+end
+if algoPara2.isFastEPG
+    disp('Fast EPG approach is used');
+    warning('It does not yield the exact result with default fitting with EPG');
+else
+    disp('Fast EPG approach is not used');
 end
 fprintf('Max. iterations    : %i\n',algoPara2.maxIter);
 fprintf('Function tolerance : %.2e\n',algoPara2.fcnTol);

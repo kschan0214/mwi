@@ -139,7 +139,7 @@ if EPGX.isExchange
         ss(3,:) = SF(:,2) * (Aiw+Aew+Amw) * (Aew/(Aiw+Aew));
     else
         % Exchange only
-        [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,Amw/0.43,Aiw+Aew,t1mw,t1iew,[],kiewmw);
+        [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,Amw/EPGX.rho_mw,Aiw+Aew,t1mw,t1iew,[],kiewmw);
         ss(1,:) = ss(1,:)* EPGX.rho_mw;
         ss(3,:) = Aew/(Aiw+Aew) * ss(2,:);
         ss(2,:) = Aiw/(Aiw+Aew) * ss(2,:);
