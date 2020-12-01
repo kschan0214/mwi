@@ -158,4 +158,8 @@ mwf(mwf<0)      = 0;
 mwf(isnan(mwf)) = 0;
 mwf(isinf(mwf)) = 0;
 
+m0(m0 < 0)      = 0;
+m0(isinf(m0))   = 0;
+m0(isnan(m0))   = 0;
+
 end

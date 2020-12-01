@@ -81,11 +81,9 @@
 %                      fitting
 % Advanced Starting point strategy
 % ================================
-%	.advancedStarting.isAdvancedStarting : true - estimated starting points	from data
-%                                          false - fixed starting points for 3T
-%	.advancedStarting.method             : 'default' - estimated S0 and T2s	IEW from data
-%                                          'robust' - estimated S0 from
-%                                          data only
+%	.advancedStarting : 'default' - estimated S0 and T2s IEW from data
+%                       'robust' - estimated S0 from data only
+%                       otherwise fixed starting points for 3T
 %
 % Output
 % --------------
@@ -273,6 +271,8 @@ if strcmpi(advancedStarting,'default') || strcmpi(advancedStarting,'robust')
             [s00,mwf0] = superfast_mwi_2m_mcr(data,te,fa,tr,t2s_pre,t1_pre,mask,b1map);
     end
     s00 = sum(s00,4); % total water
+    % also masked out problematic voxels detected by superfast method
+    mask = and(mask,s00 ~= 0);
 end
 % Simple DESPOT1 T1 mapping
 if ~exist('t1iew0','var')
