@@ -237,6 +237,11 @@ else
     options.Display = 'off';
 end
 
+% create a parallel pool
+if isParallel
+    p = gcp;
+end
+
 %%%%%%%%%% prepare input %%%%%%%%%%
 % parfor could be slowed down by a large number of unmasked voxels
 % compute a new mask based on input data
