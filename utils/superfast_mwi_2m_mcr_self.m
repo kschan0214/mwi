@@ -48,10 +48,10 @@ end
 if nargin < 9
     mode = 'superfast';
 end
-if nargin < 8
+if nargin < 8 || isempty(b1map)
     b1map = ones(dims);
 end
-if nargin < 7
+if nargin < 7 || isempty(mask)
     mask = ones(dims);
 end
 
@@ -74,6 +74,8 @@ t2s_iew = reshape(t2s_iew,[dims size(t2s_iew,4)*size(t2s_iew,5)]);
 t2s_iew = max(t2s_iew,[],4);
 
 t2s_iew = reshape(t2s_iew,prod(dims),1);
+
+t2s_mw = t2s(1);
 
 switch mode
     case 'superfast'

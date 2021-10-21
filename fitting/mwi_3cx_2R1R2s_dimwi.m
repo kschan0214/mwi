@@ -117,8 +117,13 @@
 % k.chan@donders.ru.nl
 % Date created: 28 February 2018
 % Date modified: 17 Nov 2020
+% Date modified: 10 Aug 2021
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
+
+disp('========================================');
+disp('Myelin water imaing: MCR/MCR-DIMWI model');
+disp('========================================');
 
 %%%%%%%%%% create directory for temporary results %%%%%%%%%%
 default_output_filename = 'mwi_mcr_results.mat';
@@ -136,10 +141,6 @@ try
 fprintf('Output directory                : %s\n',output_dir);
 fprintf('Intermediate results identifier : %s\n',identifier);
 
-disp('========================================');
-disp('Myelin water imaing: MCR/MCR-DIMWI model');
-disp('========================================');
-
 %%%%%%%%%% validate algorithm and image parameters %%%%%%%%%%
 [algoPara,imgPara] = CheckAndSetDefault(algoPara,imgPara);
 
@@ -155,8 +156,8 @@ isParallel = algoPara.isParallel;
 numBatch   = algoPara.numBatch;
 numEst     = algoPara.numEst;
 isInvivo   = algoPara.isInvivo;
-DIMWI      = algoPara.DIMWI;
 userDefine = algoPara.userDefine;
+% DIMWI      = algoPara.DIMWI;
 
 % data fitting method related parameters
 fitAlgor.numMagn        = algoPara.numMagn;
@@ -165,6 +166,18 @@ fitAlgor.weightMethod   = algoPara.weightMethod;
 fitAlgor.isFastEPG      = algoPara.isFastEPG;
 % fitAlgor.isNormCost = algoPara.isNormCost;
 
+%%%%%%%%%% capture all image parameters %%%%%%%%%%
+te    = double(imgPara.te);
+tr    = double(imgPara.tr);
+fa    = double(imgPara.fa);
+b0    = double(imgPara.b0);
+b0dir = double(imgPara.b0dir);
+data  = double(imgPara.img);
+mask  = double(imgPara.mask);
+fm    = double(imgPara.fieldmap);
+pini  = double(imgPara.pini);
+b1map = double(imgPara.b1map);
+
 % EPG-X related parameters
 epgx.npulse       = algoPara.npulse;
 epgx.rfphase      = algoPara.rfphase;
@@ -172,17 +185,7 @@ epgx.isExchange   = algoPara.isExchange;
 epgx.isT1mw       = algoPara.isT1mw;
 epgx.isEPG        = algoPara.isEPG;
 epgx.T1mw         = algoPara.T1mw;
-
-%%%%%%%%%% capture all image parameters %%%%%%%%%%
-te    = double(imgPara.te);
-tr    = double(imgPara.tr);
-fa    = double(imgPara.fa);
-b0dir = double(imgPara.b0dir);
-data  = double(imgPara.img);
-mask  = double(imgPara.mask);
-fm    = double(imgPara.fieldmap);
-pini  = double(imgPara.pini);
-b1map = double(imgPara.b1map);
+epgx.rho_mw       = double(imgPara.rho_mw);
 
 % basic info regarding data size
 dims    = size(data);   dims = dims(1:3);
@@ -191,40 +194,7 @@ nTE     = length(te);
 nFA     = length(fa);
 
 %%%%%%%%%% DIMWI %%%%%%%%%%
-% check if intra-axonal water volume fraction is needed
-if DIMWI.isVic
-    icvf = double(imgPara.icvf);
-else
-    icvf = zeros(dims);
-end
-% check if fibre orientation is needed
-if DIMWI.isFreqMW || DIMWI.isFreqIW || DIMWI.isR2sEW
-    ff    = double(imgPara.ff); % fibre fraction
-    try 
-        fo    = double(imgPara.fo); % fibre orientation w.r.t. B0
-        theta = zeros(size(ff));
-        for kfo = 1:size(fo,5)
-            theta(:,:,:,kfo) = AngleBetweenV1MapAndB0(fo(:,:,:,:,kfo),b0dir);
-        end
-    catch 
-        theta = double(imgPara.theta); % theta map
-    end
-    % normalise fibre fraction
-    ff = bsxfun(@rdivide,ff,sum(ff,4));
-    ff(isnan(ff)) = 0;
-else
-    ff      = ones(dims);
-    theta   = zeros(dims);
-end
-
-% store fixed parameters
-fixParam.b0     = double(imgPara.b0);
-fixParam.rho_mw = double(imgPara.rho_mw);
-fixParam.E      = double(imgPara.E);
-fixParam.x_i    = double(imgPara.x_i);
-fixParam.x_a    = double(imgPara.x_a);
-DIMWI.fixParam = fixParam;
-epgx.rho_mw = fixParam.rho_mw;
+[DIMWI, icvf, ff, theta] = setup_DIMWI(imgPara, algoPara);
 
 %%%%%%%%%% set fitting options %%%%%%%%%%
 options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*numEst,...
@@ -252,19 +222,16 @@ end
 
 if isNormData
     [scaleFactor, data] = mwi_image_normalisation(data, mask);
-%     tmp = max(abs(data(:,:,:,1,:)),[],5);
-%     scaleFactor = norm(tmp(mask>0)) / sqrt(length(find(mask>0)));
 else
     scaleFactor = 1;
 end
-% data = data / scaleFactor;
 
 %%%%%%%%%% check advanced starting point strategy %%%%%%%%%%
 advancedStarting = algoPara.advancedStarting;
 if strcmpi(advancedStarting,'default') || strcmpi(advancedStarting,'robust')
     disp('Pre-estimate starting points using predefined model')
     % 3T
-    if fixParam.b0 > 2.5 && fixParam.b0 < 3.5
+    if b0> 2.5 && b0 < 3.5
         t2s_pre = [10e-3,60e-3];    % [T2sMW, T2sIEW] in second
         t1_pre  = [234e-3, 1];    	% [T1MW, IEW], in second
     end
@@ -290,64 +257,27 @@ if ~exist('t1iew0','var')
 end
 
 fitRes.mask_fitted = mask;
-
-mask    = reshape(mask,nVoxel,1);
-% find masked voxels
+% % find masked voxels
 ind     = find(mask~=0);
-data   	= reshape(data, nVoxel,nTE,nFA);            data    = data(ind,:,:);
-fm      = reshape(fm,   nVoxel,size(fm,4));      	fm      = fm(ind,:);
-pini    = reshape(pini, nVoxel,size(pini,4));     	pini    = pini(ind,:);
-icvf    = reshape(icvf, nVoxel,1);                	icvf	= icvf(ind);
-theta   = reshape(theta,nVoxel,size(theta,4));     	theta   = theta(ind,:);
-ff      = reshape(ff,   nVoxel,size(ff,4));       	ff      = ff(ind,:);
-b1map 	= reshape(b1map,nVoxel,1);                	b1map  	= b1map(ind);
-s00     = reshape(s00,nVoxel,1);                    s00     = s00(ind);
-t1iew0  = reshape(t1iew0,nVoxel,1);                 t1iew0  = t1iew0(ind); 
-if exist('mwf0','var');     mwf0    = reshape(mwf0,nVoxel,1);     	mwf0    = mwf0(ind); end
-if exist('t2siew0','var');	t2siew0 = reshape(t2siew0,nVoxel,1);    t2siew0 = t2siew0(ind); end
-
 % repackaging for progress reporting and temporary storage
-numMaskedVoxel = length(ind);
-% check how many voxels per current batch
-nElement = floor(numMaskedVoxel/numBatch);
-% If the no. of voxels less than 200 or no. batches then do it in one go
-if numMaskedVoxel < numBatch || numMaskedVoxel < 200
-    numBatch = 1;
-    % update nElement
-    nElement = floor(numMaskedVoxel/numBatch);
-end
-% avoid too many voxels per batch which waits long to update progress
-while nElement > 500 && numBatch <=5000
-    numBatch = numBatch + 50;
-    nElement = floor(numMaskedVoxel/numBatch);
-end
-% avoid too few voxels per batch which reduces parallel computing efficiency
-while nElement < 20 && numBatch ~= 1
-    numBatch = round(numBatch/2);
-    nElement = floor(numMaskedVoxel/numBatch);
-end
-% get final no. of voxles per batch
-nElement = floor(numMaskedVoxel/numBatch);
-for kbat = 1:numBatch
-    startInd = (kbat-1)*nElement+1;
-    if kbat < numBatch
-        endInd      = kbat*nElement;
-    else
-        endInd      = length(ind);
-    end
-    data_obj(kbat).data     = data(startInd:endInd,:,:);
-    data_obj(kbat).icvf     = icvf(startInd:endInd);
-    data_obj(kbat).theta    = theta(startInd:endInd,:);
-    data_obj(kbat).ff       = ff(startInd:endInd,:);
-    data_obj(kbat).b1map    = b1map(startInd:endInd);
-    data_obj(kbat).fm       = fm(startInd:endInd,:);
-    data_obj(kbat).pini     = pini(startInd:endInd,:);
-    data_obj(kbat).s00      = s00(startInd:endInd);
-    data_obj(kbat).t1iew0	= t1iew0(startInd:endInd);
-    if exist('mwf0','var');     data_obj(kbat).mwf0     = mwf0(startInd:endInd); end
-    if exist('t2siew0','var');	data_obj(kbat).t2siew0	= t2siew0(startInd:endInd); end
-    
-end
+numMaskedVoxel = length(mask(mask>0));
+
+%%%%%%%%%% Batch processing preparation %%%%%%%%%%
+% get final no. of batches and elements of each batch
+[numBatch, nElement] = setup_batch_determine_size(mask,numBatch);
+
+% set up data_obj for batch processing
+data_obj = setup_batch_create_data_obj(data,    mask, numBatch, nElement, 'data');
+data_obj = setup_batch_create_data_obj(icvf,    mask, numBatch, nElement, 'icvf',   data_obj);
+data_obj = setup_batch_create_data_obj(theta,   mask, numBatch, nElement, 'theta',  data_obj);
+data_obj = setup_batch_create_data_obj(ff,      mask, numBatch, nElement, 'ff',     data_obj);
+data_obj = setup_batch_create_data_obj(b1map,   mask, numBatch, nElement, 'b1map',  data_obj);
+data_obj = setup_batch_create_data_obj(fm,      mask, numBatch, nElement, 'fm',     data_obj);
+data_obj = setup_batch_create_data_obj(pini,    mask, numBatch, nElement, 'pini',   data_obj);
+data_obj = setup_batch_create_data_obj(s00,     mask, numBatch, nElement, 's00',  	data_obj);
+data_obj = setup_batch_create_data_obj(t1iew0,  mask, numBatch, nElement, 't1iew0',	data_obj);
+if exist('mwf0','var');     data_obj = setup_batch_create_data_obj(mwf0,    mask, numBatch, nElement, 'mwf0',       data_obj); end
+if exist('t2siew0','var');  data_obj = setup_batch_create_data_obj(t2siew0,	mask, numBatch, nElement, 't2siew0',	data_obj); end
 
 %%%%%%%%%% initiate progress display %%%%%%%%%%
 fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
@@ -1211,15 +1141,16 @@ previous_progress_percentage    = 100*(fbat-1)/numBatch;
 current_progress_percentage     = 100*fbat/numBatch;
 % estimatedTime = current time for 1 batch * remaninig batches
 estimatedTime = seconds(lastBatchEndTime*(numBatch-fbat));
+estimatedTime.Format = 'hh:mm';
 
 if fbat ~= 0 && ~isRestore
-    previous_progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', previous_progress_percentage,datestr(estimatedTime, 'HH:MM'));
+    previous_progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', previous_progress_percentage,estimatedTime);
     % delete previous progress
     for ii=1:length(previous_progress)-1; fprintf('\b'); end
 end
 
 % display current progress
-progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', current_progress_percentage,datestr(estimatedTime, 'HH:MM'));
+progress = sprintf('\nProgress: %.2f %%%% \nEstimated remainaing time (HH:MM): %s\n', current_progress_percentage,estimatedTime);
 fprintf(progress);
 
 end
