@@ -45,42 +45,55 @@
 % Date created: 4 January 2018
 % Date last modified: 16 August 2018
 % Date last modified: 29 October 2019
+% Date modified : 21 October 2021 (bug fix for restoring EPG-X signal from
+%                                  saturation factor)
 %
 %
 function s = mwi_model_2T13T2scc_dimwi(te,tr,fa,b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewmw,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI,EPGX)
 
-%% validate input variables
+%% Step 1: validate input variables
+
+% if no EPG-X set then no EPG-X
 if nargin < 20
     EPGX.isExchange = false;
-    EPGX.isEPG = false;
+    EPGX.isEPG      = false;
 end
     
+% if no DIMWI set then no DIMWI
 if nargin < 19 || isempty(DIMWI)
 	DIMWI.isFreqMW  = false;
     DIMWI.isFreqIW  = false;
     DIMWI.isR2sEW   = false;
 end
+
+% if no phase offset set then no phase offset
 if nargin < 18
     pini=0;
 end
 
+% get fixed values if DIMWI is used
 if DIMWI.isFreqMW || DIMWI.isFreqIW || DIMWI.isR2sEW
-fixParam = DIMWI.fixParam;
+    fixParam = DIMWI.fixParam;
 end
 
+% replicate phase offset for all acquisition if only 1 value is available
 if numel(pini) == 1
     pini = pini * ones(size(fa));
 end
+
+% replicate total field for all acquisition if only 1 value is available
 if numel(fbg) == 1
     fbg = fbg * ones(size(fa));
 end
 
-%% check DIMWI model
+%% Step 2: get DIMWI derived parameters
 %%%%%%%%%% frequency shifts estimated using HCFM %%%%%%%%%%
 if DIMWI.isFreqMW || DIMWI.isFreqIW
+    
     % derive g-ratio 
     g = sqrt(abs(Aiw)/(abs(Aiw)+abs(Amw)/fixParam.rho_mw));
-    % compute frequency shift given theta
+    
+    % compute frequency shifts given theta
     [freqMW, freqIW] = hcfm_freq(fixParam.x_i,fixParam.x_a,g,DIMWI.theta,fixParam.E,fixParam.b0);
     if DIMWI.isFreqMW 
         freq_mw = freqMW;
@@ -107,17 +120,29 @@ else
     d_e = zeros(size(te));
 end
 
-%% T1
+%% Compute steady-state signal for each pool
+% 1: MW; 2: IW; 3: EW
 if EPGX.isExchange
+    % exchange assumed to take place between (myelin water + myelin macromolecules) and IEW, except when EPGX.rho_mw = 1
+    
+    % derive tissue properties
+    myelinVolumeSignal      = Amw/EPGX.rho_mw;
+    IEWVolumeSignal         = Aiw + Aew;
+    volumeScaleFactor       = IEWVolumeSignal + myelinVolumeSignal;
+    v_ic                    = Aiw / IEWVolumeSignal;
+        
     if EPGX.isEPG
+        
         % EPG-X
         phiCycle = RF_phase_cycle(EPGX.npulse,EPGX.rfphase);
         t1x = [t1iew, t1mw]; 
         t2x = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
-%         t2x = [t2siw,284e-6]; % assuming T2* of iw has similar T2 of long T1 compartment
-        fx = (Amw/EPGX.rho_mw)/(Aiw+Aew+Amw/EPGX.rho_mw); % mwf
-        fs = (freq_mw-freq_iw); % frequency difference between long and short T1 compartments
+
+%         fx = (Amw/EPGX.rho_mw)/(Aiw+Aew+Amw/EPGX.rho_mw); % myelin volume fraction
+        fx = myelinVolumeSignal/volumeScaleFactor;  % myelin volume fraction
+        fs = (freq_mw-freq_iw);                     % frequency difference between long and short T1 compartments
         
+        % compute saturation factor
         SF = zeros(length(fa),2);
         for ii=1:length(fa)
             % true flip angle
@@ -130,25 +155,33 @@ if EPGX.isExchange
             % EPG-X core
             tmp = EPGX_GRE_BMsplit_PrecomputedT(EPGX.T3D_all{ii},phiCycle,tr,t1x,t2x,fx,kiewmw,'delta',fs,'kmax',10,'ss',[z1,z2]);
 
-            % saturation factors  
+            % saturation factors, 1: IEW; 2:Myelin  
             SF(ii,1) = tmp{2}(end);
             SF(ii,2) = tmp{1}(end); 
         end
-        ss(1,:) = SF(:,1) * (Aiw+Aew+Amw) * EPGX.rho_mw;
-        ss(2,:) = SF(:,2) * (Aiw+Aew+Amw) * (Aiw/(Aiw+Aew));
-        ss(3,:) = SF(:,2) * (Aiw+Aew+Amw) * (Aew/(Aiw+Aew));
+        % 20211021: bug fix
+%         ss(1,:) = SF(:,1) * (Aiw+Aew+Amw) * EPGX.rho_mw;
+%         ss(2,:) = SF(:,2) * (Aiw+Aew+Amw) * (Aiw/(Aiw+Aew));
+%         ss(3,:) = SF(:,2) * (Aiw+Aew+Amw) * (Aew/(Aiw+Aew));
+        ss(1,:) = SF(:,1) * volumeScaleFactor * EPGX.rho_mw;        % MW = Myelin volume * MW density
+        ss(2,:) = SF(:,2) * volumeScaleFactor * v_ic;               % IW = IEW * v_ic
+        ss(3,:) = SF(:,2) * volumeScaleFactor * (1 - v_ic);         % EW = IEW * (1-v_ic)
+        
     else
+        
         % Exchange only
-        [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,Amw/0.43,Aiw+Aew,t1mw,t1iew,[],kiewmw);
-        ss(1,:) = ss(1,:)* EPGX.rho_mw;
-        ss(3,:) = Aew/(Aiw+Aew) * ss(2,:);
-        ss(2,:) = Aiw/(Aiw+Aew) * ss(2,:);
+        [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw);
+        ss(1,:) = ss(1,:) * EPGX.rho_mw;	% MW = Myelin volume * MW density
+        ss(2,:) = ss(2,:) * v_ic;           % IW = IEW * v_ic
+        ss(3,:) = ss(2,:) * (1-v_ic);       % EW = IEW * (1-v_ic)
+         
     end
 else
-    % separated steady-state
+    % independent steady-state
     ss = mwi_model_3T1_ssSPGR(fa,tr,Amw,Aiw,Aew,t1mw,t1iew,t1iew,b1);
 end
 
+% create 2D matrices for direct multiplication
 [te2D,Amw2D]    = ndgrid(te,ss(1,:));
 [~,Aiw2D]       = ndgrid(te,ss(2,:));
 [~,Aew2D]       = ndgrid(te,ss(3,:));
@@ -156,11 +189,11 @@ end
 [~,pini2D]      = ndgrid(te,pini);
 [d_e2D,~]       = ndgrid(d_e,fa);
 
+%% T2* decay effect
 
-%%
-
-s = (Amw2D.*exp(te2D*(-1/t2smw+1i*2*pi*freq_mw)) + ...
-     Aiw2D.*exp(te2D*(-1/t2siw+1i*2*pi*freq_iw)) + ...
-     Aew2D.*exp(te2D*(-1/t2sew+1i*2*pi*freq_ew)).*exp(-d_e2D)).*exp(1i*pini2D).*exp(1i*2*pi*fbg2D.*te2D);
+s = (Amw2D .* exp(te2D * (-1/t2smw + 1i*2*pi*freq_mw)) + ...                % S_MW
+     Aiw2D .* exp(te2D * (-1/t2siw + 1i*2*pi*freq_iw)) + ...                % S_IW
+     Aew2D .* exp(te2D * (-1/t2sew + 1i*2*pi*freq_ew)).*exp(-d_e2D)) .* ... % S_EW
+     exp(1i*pini2D) .* exp(1i*2*pi*fbg2D.*te2D);                            % phase offset and total field
 
 end

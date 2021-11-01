@@ -26,7 +26,7 @@
 % Kwok-shing Chan @ DCCN
 % k.chan@donders.ru.nl
 % Date created: 15 Feb 2019
-% Date last modified: 
+% Date modified: 17 Nov 2020, bug fix when M0r or M0f = 0
 %
 %% main
 function [ss,ss_pool] = mwi_model_ssSPGR_2T1(fa,tr,M0r,M0f,t1r,t1f,krf,kfr)
@@ -36,9 +36,18 @@ nfa = length(fa);
 
 % derive the rest of the exchange rates
 if isempty(krf)
-    krf = kfr * M0f/M0r;
+    if M0r ~= 0
+        krf = kfr * M0f/M0r;
+    else
+        krf = 0;
+    end
+        
 else
-    kfr   = krf * M0r/M0f;
+    if M0f ~= 0
+        kfr   = krf * M0r/M0f;
+    else
+        kfr = 0;
+    end
 end
 
 % convert T1s to R1s for simplicity
