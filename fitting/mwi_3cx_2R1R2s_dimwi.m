@@ -633,7 +633,7 @@ end
 if fitAlgor.numMagn~=numel(te) % non magnitude fittingfalse
 
     w_bg0 = db0(:).'*2*pi;	w_bglb = (db0(:).'-8*b0)*2*pi;      w_bgub  = (db0(:).'+8*b0)*2*pi;
-    pini00 = pini0(:).';    pinilb = ones(size(pini0))*(-pi);	piniub  = ones(size(pini0))*pi;
+    pini00 = pini0(:).';    pinilb = ones(size(pini0))*(-2*pi);	piniub  = ones(size(pini0))*2*pi;
 %     w_bg0 = db0*2*pi;	w_bglb = (db0-25)*2*pi;	w_bgub  = (db0+25)*2*pi;
 %     if isnan(pini0)
 %         pini0  = angle(exp(1i*(-2*pi*db0*te(1)-angle(s(1)))));
@@ -779,6 +779,9 @@ if fitAlgor.isWeighted
         case '1stEcho'
             % weights using the 1st echo intensity of each flip angle
             w = bsxfun(@rdivide,abs(s),abs(s(1,:)));
+        case 'quadratic_1stEcho'
+            % weights using the 1st echo intensity of each flip angle
+            w = bsxfun(@rdivide,abs(s).^2,abs(s(1,:).^2));
     end
 
 else
