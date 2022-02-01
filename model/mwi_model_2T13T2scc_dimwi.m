@@ -169,7 +169,8 @@ if EPGX.isExchange
         
     else
         
-        % Exchange only
+        % Exchange only, no need to multiply volumeScaleFactor as direct
+        % volume is used instead of volume fraction
         [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw);
         ss(1,:) = ss(1,:) * EPGX.rho_mw;	% MW = Myelin volume * MW density
         ss(2,:) = ss(2,:) * v_ic;           % IW = IEW * v_ic
