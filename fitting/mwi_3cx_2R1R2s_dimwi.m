@@ -118,6 +118,7 @@
 % Date created: 28 February 2018
 % Date modified: 17 Nov 2020
 % Date modified: 10 Aug 2021
+% Date modified: 1 Feb 2022 (increase range of pini)
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
 
