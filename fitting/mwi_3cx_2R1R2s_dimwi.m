@@ -119,6 +119,7 @@
 % Date modified: 17 Nov 2020
 % Date modified: 10 Aug 2021
 % Date modified: 1 Feb 2022 (increase range of pini)
+% Date modified: 22 Aug 2022 (add self boundary)
 %
 function fitRes = mwi_3cx_2R1R2s_dimwi(algoPara,imgPara)
 
@@ -149,15 +150,16 @@ fprintf('Intermediate results identifier : %s\n',identifier);
 DEBUG   = algoPara.DEBUG;
 
 %%%%%%%%%% capture all algorithm parameters %%%%%%%%%%
-isNormData = algoPara.isNormData;
-maxIter    = algoPara.maxIter;
-fcnTol     = algoPara.fcnTol;
-stepTol    = algoPara.stepTol;
-isParallel = algoPara.isParallel;
-numBatch   = algoPara.numBatch;
-numEst     = algoPara.numEst;
-isInvivo   = algoPara.isInvivo;
-userDefine = algoPara.userDefine;
+isNormData      = algoPara.isNormData;
+maxIter         = algoPara.maxIter;
+fcnTol          = algoPara.fcnTol;
+stepTol         = algoPara.stepTol;
+isParallel      = algoPara.isParallel;
+numBatch        = algoPara.numBatch;
+numEst          = algoPara.numEst;
+isInvivo        = algoPara.isInvivo;
+userDefine      = algoPara.userDefine;
+isSelfBoundary  = algoPara.isSelfBoundary;
 % DIMWI      = algoPara.DIMWI;
 
 % data fitting method related parameters
@@ -257,6 +259,10 @@ if ~exist('t1iew0','var')
     end
 end
 
+r2s_sc = R2star_trapezoidal(mean(data,5),te);
+r2s_sc(isnan(r2s_sc)) = 0;
+r2s_sc(isinf(r2s_sc)) = 0;
+
 fitRes.mask_fitted = mask;
 % % find masked voxels
 ind     = find(mask~=0);
@@ -277,6 +283,7 @@ data_obj = setup_batch_create_data_obj(fm,      mask, numBatch, nElement, 'fm', 
 data_obj = setup_batch_create_data_obj(pini,    mask, numBatch, nElement, 'pini',   data_obj);
 data_obj = setup_batch_create_data_obj(s00,     mask, numBatch, nElement, 's00',  	data_obj);
 data_obj = setup_batch_create_data_obj(t1iew0,  mask, numBatch, nElement, 't1iew0',	data_obj);
+data_obj = setup_batch_create_data_obj(r2s_sc,  mask, numBatch, nElement, 'r2s_sc',	data_obj);
 if exist('mwf0','var');     data_obj = setup_batch_create_data_obj(mwf0,    mask, numBatch, nElement, 'mwf0',       data_obj); end
 if exist('t2siew0','var');  data_obj = setup_batch_create_data_obj(t2siew0,	mask, numBatch, nElement, 't2siew0',	data_obj); end
 
@@ -315,6 +322,7 @@ if isParallel
             initialGuess(k).db0     = data_obj(kbat).fm(k,:);     % fieldmap
             initialGuess(k).s00     = data_obj(kbat).s00(k);
             initialGuess(k).t1iew0  = data_obj(kbat).t1iew0(k);
+            initialGuess(k).r2s_sc  = data_obj(kbat).r2s_sc(k);
             
             if isfield(data_obj,'mwf0');    initialGuess(k).mwf0    = data_obj(kbat).mwf0(k); end
             if isfield(data_obj,'t2siew0'); initialGuess(k).t2siew0 = data_obj(kbat).t2siew0(k); end
@@ -339,7 +347,7 @@ if isParallel
             initGuess = initialGuess(k);
 
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
-                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
+                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,isSelfBoundary,options,DEBUG);
         end
         lastBatchEndTime = toc;
         
@@ -374,6 +382,7 @@ else
             initialGuess(k).db0     = data_obj(kbat).fm(k,:);     % fieldmap
             initialGuess(k).s00     = data_obj(kbat).s00(k);
             initialGuess(k).t1iew0  = data_obj(kbat).t1iew0(k);
+            initialGuess(k).r2s_sc  = data_obj(kbat).r2s_sc(k);
             
             if isfield(data_obj,'mwf0');    initialGuess(k).mwf0    = data_obj(kbat).mwf0(k); end
             if isfield(data_obj,'t2siew0'); initialGuess(k).t2siew0 = data_obj(kbat).t2siew0(k); end
@@ -398,7 +407,7 @@ else
             initGuess = initialGuess(k);
 
             [estimates(k,:),resnorm(k),exitflag(k),iter(k)] = ...
-                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG);
+                FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,isSelfBoundary,options,DEBUG);
         end
         lastBatchEndTime = toc;
         
@@ -518,7 +527,7 @@ end
 end
 
 %% Setup lsqnonlin and fit with the default model
-function [x,res,exitflag,iterations] = FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initialGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,options,DEBUG)
+function [x,res,exitflag,iterations] = FitModel(s,te,tr,fa,b10,icvf0,theta0,ff0,initialGuess,epgx,DIMWI,fitAlgor,userDefine,isInvivo,isSelfBoundary,options,DEBUG)
 if DEBUG
     % if DEBUG then create an array to store resnorm of all iterations
     global DEBUG_resnormAll
@@ -531,6 +540,7 @@ db0     = initialGuess.db0;
 pini0   = initialGuess.pini0;
 rho0    = max(initialGuess.s00,max(abs(s(:)))); % start with highest S0 possible
 t1iew0  = initialGuess.t1iew0;
+r2s_sc  = initialGuess.r2s_sc;
 if isfield(initialGuess,'mwf0');    mwf     = min(initialGuess.mwf0,0.3); end % maximum starting MWF is 30%
 if isfield(initialGuess,'t2siew0');	r2siew0	= 1/initialGuess.t2siew0; end 
 
@@ -555,8 +565,12 @@ if isInvivo
 %     t1slb   = 50e-3;  	t1sub   = 650e-3;   t1s0   = 234e-3;  	
 %     t1llb   = 500e-3; 	t1lub   = t10+1;    t1l0   = t10;     	
 %     kls0   = 0;       	klslb   = 0;      	klsub   = 20;       % exchange rate from long T1 to short T1
-
-    mwi_setup_initial_guess_3T_invivo;
+    
+    if isSelfBoundary
+        mwi_setup_initial_guess_3T_invivo_selfboundary;
+    else
+        mwi_setup_initial_guess_3T_invivo;
+    end
 
 else
     % range for ex vivo
@@ -835,6 +849,9 @@ try algoPara2.isWeighted        = algoPara.isWeighted;  	catch; algoPara2.isWeig
 try algoPara2.numMagn           = algoPara.numMagn;         catch; algoPara2.numMagn = numel(imgPara.te); end
 % check # of phase-corrupted echoes
 try algoPara2.isInvivo          = algoPara.isInvivo;       	catch; algoPara2.isInvivo = true; end
+% check # of phase-corrupted echoes
+try algoPara2.isSelfBoundary 	= algoPara.isSelfBoundary;	catch; algoPara2.isSelfBoundary = false; end
+
 % % check # of phase-corrupted echoes
 % try algoPara2.isNormCost        = algoPara.isNormCost;      catch; algoPara2.isNormCost = true; end
 % check user bounds and initial guesses

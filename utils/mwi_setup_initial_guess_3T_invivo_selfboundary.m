@@ -13,23 +13,28 @@ end
 iwf = (1-mwf)*v_ic;	% Intra-axonal water fraction
 ewf = 1-mwf-iwf;  	% Extra-axonal water fraction
 
+if r2s_sc < 7 
+    r2s_sc = 7;
+end
 %%%%%%%%%% R2* %%%%%%%%%%
 % MW R2*, corresponding to T2* ranging from [3.3, 20]ms, starting at 10ms 
+% r2smwlb = max(r2s_sc,50);	% lower bound
 r2smwlb = 50;	% lower bound
 r2smwub = 300;  % upper bound
 r2smw0  = 100;  % Starting point
 
 % IEW R2*
 if ~exist('r2siew0','var') || isnan(r2siew0) || isinf(r2siew0)
-    r2siew0 = 18.5; % 3T
+%     r2siew0 = 18.5; % 3T
+r2siew0 = r2s_sc;
 end
 % IW R2*, corresponding to T2* ranging from [20, 167]ms, starting at 63ms by default or previously estimated value 
 r2siwlb = 6;	
-r2siwub = 50;   
+r2siwub = max(r2s_sc,6+eps);   % avoid R2* < 6
 r2siw0  = min(r2siew0-2.5,r2siwub); r2siw0 = max(r2siw0,r2siwlb); % make sure initial point is within range
 % EW R2*, corresponding to T2* ranging from [20, 167]ms, starting at 48ms by default or previously estimated value 
 r2sewlb = 6;	
-r2sewub = 50;   
+r2sewub = max(r2s_sc,6+eps);   % avoid R2* < 6
 r2sew0  = min(r2siew0+2.5,r2sewub); r2sew0 = max(r2sew0,r2sewlb); % make sure initial point is within range
 
 %%%%%%%%%% T1 %%%%%%%%%%

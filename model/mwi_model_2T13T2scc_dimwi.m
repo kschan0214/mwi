@@ -171,10 +171,15 @@ if EPGX.isExchange
         
         % Exchange only, no need to multiply volumeScaleFactor as direct
         % volume is used instead of volume fraction
-        [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw);
-        ss(1,:) = ss(1,:) * EPGX.rho_mw;	% MW = Myelin volume * MW density
-        ss(2,:) = ss(2,:) * v_ic;           % IW = IEW * v_ic
-        ss(3,:) = ss(2,:) * (1-v_ic);       % EW = IEW * (1-v_ic)
+%         [~, ss] = mwi_model_ssSPGR_2T1(fa*b1,tr,myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw);
+%         ss(1,:) = ss(1,:) * EPGX.rho_mw;	% MW = Myelin volume * MW density
+%         ss(2,:) = ss(2,:) * v_ic;           % IW = IEW * v_ic
+%         ss(3,:) = ss(2,:) * (1-v_ic);       % EW = IEW * (1-v_ic)
+        % 20220209: bug fix 
+        [~, ss_pool] = mwi_model_ssSPGR_2T1(fa*b1,tr,myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw);
+        ss(1,:) = ss_pool(1,:) * EPGX.rho_mw;	% MW = Myelin volume * MW density
+        ss(2,:) = ss_pool(2,:) * v_ic;           % IW = IEW * v_ic
+        ss(3,:) = ss_pool(2,:) * (1-v_ic);       % EW = IEW * (1-v_ic)
          
     end
 else
