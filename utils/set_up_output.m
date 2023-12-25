@@ -47,10 +47,12 @@ end
 output_filename = fullfile(output_dir,output_filename);
 
 % check if user specified idendifier for previous progress
-temp_prefix = fullfile(output_dir,temp_prefix);
 if isfield(imgPara,'identifier')
     % get temporary file identifier if provided
-    identifier = imgPara.identifier;
+    identifier  = imgPara.identifier;
+    temp_dir    =  fullfile(output_dir,['temporary_' identifier]);
+    temp_prefix = fullfile(temp_dir,temp_prefix);
+
     % check if the temporary file exists
     if ~exist([temp_prefix identifier '.mat'],'file')
         error('Cannot detect the temporary file with the provided identifier. Please enter a valid identifier or remove the input identifier');
@@ -60,11 +62,14 @@ else
     identifier = [];
     % make sure the identifier is unique
     while isempty(identifier) || exist([temp_prefix identifier '.mat'],'file')
-        identifier = num2str(randi(9));
-        for k = 2:8; identifier = [identifier,num2str(randi(9))]; end
-        identifier = num2str(identifier);
+        % identifier = num2str(randi(9));
+        identifier = datestr(datetime('now'),'yymmddHHMMSSFFF');
+        % for k = 2:8; identifier = [identifier,num2str(randi(9))]; end
+        % identifier = num2str(identifier);
     end
+    temp_dir    =  fullfile(output_dir,['temporary_' identifier]);
 end
 temp_filename = [temp_prefix identifier '.mat'];
+% temp_filename = [temp_prefix identifier];
 
 end
