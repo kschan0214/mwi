@@ -1,14 +1,32 @@
 classdef MCRMWI
-    properties
-        gyro    = 42.57747892;
-        B0      = 3; % T
-        B0dir   = [0;0;1]; % main magnetic field direction with respect to FOV
+% This class implements the equations in 
+% Chan, K.-S., Marques, J.P., 2020. Multi-compartment relaxometry and diffusion informed myelin water imaging – 
+% Promises and challenges of new gradient echo myelin water imaging methods. 
+% Neuroimage 221, 117159. https://doi.org/10.1016/j.neuroimage.2020.117159
+% Chan, K.-S., Chamberland, M., Marques, J.P., 2023. On the performance of multi-compartment relaxometry for 
+% myelin water imaging (MCR-MWI) – test-retest repeatability and inter-protocol reproducibility. 
+% Neuroimage 266, 119824. https://doi.org/10.1016/j.neuroimage.2022.119824
+%
+% Kwok-Shing Chan @ MGH
+% kchan2@mgh.harvard.edu
+% Date created: 4 January 2024
+% Date modified:
+%
+    properties (Constant)
+            gyro = 42.57747892;
+    end
+
+    properties (GetAccess = public, SetAccess = protected)
+        
         % tissue parameters
         x_i     = -0.1;     % ppm
         x_a     = -0.1;     % ppm
         E       = 0.02;     % ppm
         rho_mw  = 0.42;     % relative water proton density relative to IEW
         t1_mw   = 234e-3;   % s
+        % hardware setting
+        B0      = 3; % T
+        B0dir   = [0;0;1]; % main magnetic field direction with respect to FOV
         te;
         tr;
         fa;
@@ -43,6 +61,7 @@ classdef MCRMWI
                     epgx_params_default.rfphase = epgx_params.rfphase;
                 end
             end
+            epgx_params_default.rfphase_cycle = obj.RF_phase_cycle(epgx_params_default.npulse,epgx_params_default.rfphase);
             obj.epgx_params    = epgx_params_default;
             
             % fixed tissue and scanner parameters
@@ -133,7 +152,7 @@ classdef MCRMWI
                 elseif obj.B0 > 1 && obj.B0 < 2 % 1.5T
                     t2s_pre = [10e-3,80e-3];    
                     t1_pre  = [234e-3, 0.7];    
-                elseif obj.B0 > 6 && obj.B0 < 2 % 7T
+                elseif obj.B0 > 6 && obj.B0 < 8 % 7T
                     t2s_pre = [10e-3,40e-3];    
                     t1_pre  = [234e-3, 1.5];    
                 end
@@ -152,7 +171,9 @@ classdef MCRMWI
             % Simple DESPOT1 T1 mapping
             if ~exist('t1iew0','var')
                 fprintf('Estimate T1 using DESPOT1...')
-                [t1iew0, m0] = despot1_mapping(permute(data(:,:,:,1,:),[1 2 3 5 4]),obj.fa,obj.tr,mask,b1map);
+                % [t1iew0, m0] = despot1_mapping(permute(data(:,:,:,1,:),[1 2 3 5 4]),obj.fa,obj.tr,mask,b1map);
+                despot1_obj     = despot1(obj.tr,obj.fa);
+                [t1iew0, m0]    = despot1_obj.estimate(permute(data(:,:,:,1,:),[1 2 3 5 4]),mask,b1map);
                 if ~exist('m00','var')
                     m00 = m0;
                     % also masked out DESPOT1 problematic voxels
@@ -182,10 +203,13 @@ classdef MCRMWI
             if exist('mwf0','var');     data_obj_all = setup_batch_create_data_obj_slice(mwf0,      mask, 'mwf0',       data_obj_all); end
             if exist('t2siew0','var');  data_obj_all = setup_batch_create_data_obj_slice(t2siew0,   mask, 't2siew0',	data_obj_all); end
             
+            NTotalSamples = numel(mask(mask>0));
             for kbat = 1:numel(data_obj_all)
                 data_obj    = data_obj_all(kbat);
                 batchNumber = kbat;
-                save(fullfile(temp_dir,strcat(temp_prefix,'_batch',num2str(kbat))),'data_obj','identifier','scaleFactor','batchNumber');
+                NSamples    = size(data_obj.data,1);
+                save(fullfile(temp_dir,strcat(temp_prefix,'_batch',num2str(kbat))),'data_obj','identifier','scaleFactor','batchNumber',...
+                    'NTotalSamples','NSamples');
             end
             algoPara.identifier         = identifier;
             algoPara.temp_dir           = temp_dir;
@@ -208,7 +232,7 @@ classdef MCRMWI
             disp('==============================================');
 
             % display some messages
-            obj.display_message(algoPara);
+            obj.display_algorithm_info(algoPara);
     
             % determine if the data is provided directly or saved to the disk
             if nargin < 3
@@ -246,6 +270,8 @@ classdef MCRMWI
             stepTol         = algoPara.stepTol;
             isParallel      = algoPara.isParallel;
             numEst          = algoPara.numEst;
+            jacobianMode    = algoPara.jacobian;
+            isAutoSave      = algoPara.autoSave;
 
             % data fitting method related parameters
             fitParams.isComplex      = algoPara.isComplex;
@@ -264,7 +290,7 @@ classdef MCRMWI
 
             %%%%%%%%%% set fitting options %%%%%%%%%%
             options = optimoptions(@lsqnonlin,'MaxIter',maxIter,'MaxFunctionEvaluations',200*numEst,...
-                'StepTolerance',stepTol,'FunctionTolerance',fcnTol,'Display','off');
+                'StepTolerance',stepTol,'FunctionTolerance',fcnTol,'Display','off','Jacobian',jacobianMode);
 
             if fitParams.DEBUG
                 % if DEBUG is on then disables parallel computing
@@ -280,21 +306,11 @@ classdef MCRMWI
             % main
             try
                 
-                % %%%%%%%%%% initiate progress display %%%%%%%%%%
-                % fprintf('%i voxel(s) to be fitted...\n',numMaskedVoxel);
-                % if exist(temp_filename,'file')
-                %     % restore progress
-                %     disp('Restoring previous progress...')
-                %     load(temp_filename);
-                %     isRestore = true;
-                % else
-                %     % new progress
-                %     fbat = 0;
-                %     lastBatchEndTime = nElement *8; %roughly 8s for 1 voxel
-                %     isRestore = false;
-                % end
-                % progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
-                % isRestore = false;
+                %%%%%%%%%% progress display %%%%%%%%%%
+
+                disp('--------')
+                disp('Progress')
+                disp('--------')
 
                 %%%%%%%%%% fitting main %%%%%%%%%%
                 for kbat = 1:Nbatch
@@ -305,14 +321,21 @@ classdef MCRMWI
                         variableInfo = who('-file', temp_mat);
                         isFit = ~ismember('res_obj', variableInfo);
                     else
-                        isFit = true;
+                        NSamples    = size(data_obj.data,1);
+                        isFit       = true;
                     end
-                    
+
+                    % display current batch number
+                    fprintf('#Batch %3d/%d',kbat,Nbatch);
+
                     if isFit 
                         if isBatch
                             % if batch mode then load data from disk
-                            load(temp_mat);
+                            load(temp_mat,'data_obj','NSamples');
                         end
+
+                        % display number of voxels to be fitted
+                        fprintf(',   #Voxel = %6d',NSamples);
 
                         % process non-empty slices
                         if ~data_obj.isEmptySlice
@@ -342,7 +365,7 @@ classdef MCRMWI
                             end
                             
                             % start timer
-                            tic;
+                            start = tic;
                             % create an empty array for fitting results 
                             resnorm   = zeros(size(data,1),1);
                             iter      = zeros(size(data,1),1);
@@ -368,7 +391,10 @@ classdef MCRMWI
                                         iter(k) = output.iterations;
                                 end
                             end
-                            lastBatchEndTime = toc;
+                            
+                            % display processing time
+                            D = duration(0,0,toc(start),'Format','mm:ss');
+                            fprintf(',    Elapsed(MM:SS): %s \n',string(D));
 
                             % reshape the fitting results into image
                             ind = find(data_obj.mask(:)>0);
@@ -392,15 +418,61 @@ classdef MCRMWI
                             res_obj.resnorm      = rn;
                             res_obj.iterations   = it;
                             res_obj.exitflag     = ef;
+                            res_obj.timeElapsed  = D;
                             
                             % display progress
-                            % progress_display(numBatch,fbat,lastBatchEndTime,isRestore);
                             if isBatch
                                 save(temp_mat,'res_obj','-append')
                             end
+                        else
+                            fprintf('\n');
+                            
                         end
+                    else
+                        if isBatch
+                            % if batch mode then load data from disk
+                            load(temp_mat,'NSamples','res_obj');
+                            % display number of voxels to be fitted
+                            fprintf(',   #Voxel = %6d',NSamples);
+                        end
+                        fprintf(',    Elapsed(MM:SS): %s ',string(res_obj.timeElapsed ));
+                        fprintf(',    this batch is previously processed.\n')
                     end
                 end
+
+                if isBatch
+                    
+                    res_obj = []; isSetup = false;
+                    for kbat = 1:Nbatch
+                        temp_mat = strcat(temp_files,['_batch' num2str(kbat)]);
+                        temp = load(temp_mat);
+                        if isfield(temp,'res_obj')
+                            if ~isSetup
+    
+                                fieldname = fieldnames(temp.res_obj);
+                                for kfield = 1:numel(fieldname)
+                                    if numel(temp.res_obj.(fieldname{kfield})) ~= 1
+                                        dims = [size(temp.res_obj.(fieldname{kfield}),1),size(temp.res_obj.(fieldname{kfield}),2),...
+                                            Nbatch,size(temp.res_obj.(fieldname{kfield}),3)];
+                                        res_obj.(fieldname{kfield}) = zeros(dims);
+                                    end
+                                end
+                                isSetup = true;
+                            end
+                            fieldname = fieldnames(res_obj);
+                            for kfield = 1:numel(fieldname)
+                                res_obj.(fieldname{kfield})(:,:,kbat,:) = temp.res_obj.(fieldname{kfield});
+                            end
+                        end
+                    end
+                    delete(strcat(temp_files,'_batch*'));
+                    rmdir(algoPara.temp_dir);
+                end
+                if isAutoSave
+                    save(output_filename,'res_obj','-append');
+                end
+
+                disp('The process is completed.')
 
             catch ME
     
@@ -431,7 +503,8 @@ classdef MCRMWI
             if nargin < 7
                 %%%%%%%%%% set fitting options %%%%%%%%%%
                 options = optimoptions(@lsqnonlin,'MaxIter',fitParams.maxIter,'MaxFunctionEvaluations',200*fitParams.numEst,...
-                    'StepTolerance',fitParams.stepTol,'FunctionTolerance',fitParams.fcnTol,'Display','off');
+                    'StepTolerance',fitParams.stepTol,'FunctionTolerance',fitParams.fcnTol,'Display','off',...
+                    'Jacobian',fitParams.jacobian);
             end
 
             %%%%%%%%%% Step 1: Prepare fitting algorithm %%%%%%%%%%
@@ -442,9 +515,9 @@ classdef MCRMWI
             Nfa     = numel(obj.fa);
             T3D_all = cell(1,Nfa);
             if obj.epgx_params.isExchange && obj.epgx_params.isEPG
-                phiCycle = RF_phase_cycle(obj.epgx_params.npulse,obj.epgx_params.rfphase);
+                % phiCycle = obj.RF_phase_cycle(obj.epgx_params.npulse,obj.epgx_params.rfphase);
                 for kfa=1:Nfa
-                    T3D_all{kfa} = obj.PrecomputeT(phiCycle,d2r(obj.fa(kfa)*b1));
+                    T3D_all{kfa} = obj.PrecomputeT(obj.epgx_params.rfphase_cycle,obj.d2r(obj.fa(kfa)*b1));
                 end
             end
 
@@ -507,14 +580,43 @@ classdef MCRMWI
         % compute the residuals and jacobian for data fitting
         function [residuals, jacobian] = residuals(obj, pars, y, b1,  DIMWI, w,fitParams, T3D_all)
 
+            % forward model 
             s = obj.FWD(pars, b1, T3D_all, DIMWI, fitParams);
 
+            if ~fitParams.isComplex
+                s = abs(s);
+                y = abs(y);
+            end
+
+            % compute resiudal (w/ weighting)
             residuals = s(:) - y(:);
             residuals = residuals .* w(:);
 
+            % if complex data fitting then separate real/imaginary
             if fitParams.isComplex
                 residuals = [real(residuals);imag(residuals)];
             end
+
+            % Jacobian
+            if nargout > 1
+                % numerical jacobian
+                jacobian = zeros(numel(s),numel(pars));
+                for k = 1:numel(pars)
+                    h               = 1e-12;
+                    pars_h          = pars;
+                    pars_h(k)       = pars(k) + h;
+                    if fitParams.isComplex
+                        tmp             = (obj.FWD(pars_h, b1, T3D_all, DIMWI, fitParams) - s)/h;
+                    else
+                        tmp             = (abs(obj.FWD(pars_h, b1, T3D_all, DIMWI, fitParams)) - s)/h;
+                    end
+                    jacobian(:,k)   = tmp(:) .* w(:);
+                end
+                if fitParams.isComplex
+                    jacobian  = [real(jacobian);imag(jacobian)];
+                end
+            end
+                
             
         end
 
@@ -525,8 +627,9 @@ classdef MCRMWI
 
             % number of flip angles and echo times
             Nfa = numel(obj.fa);
-            Nte = numel(obj.te);
+            % Nte = numel(obj.te);
 
+            % get parameters
             Amw = pars(1);
 
             if ~DIMWI.isFitVic
@@ -574,7 +677,7 @@ classdef MCRMWI
 
             % external effects
             if ~fitParams.isComplex % magnitude fitting
-                fbg     = zeros(Nfa);                          
+                fbg     = zeros(Nfa,1);                          
                 pini    = 0;
             else    % other fittings
                 fbg     = pars(counter:counter+Nfa-1);  
@@ -584,19 +687,15 @@ classdef MCRMWI
             freq_ew = 0;
 
             %%%%%%%%%% simulate signal based on parameter input %%%%%%%%%%
-            s = zeros([Nte Nfa length(DIMWI.ff)]);
-            DIMWI_curr = DIMWI;
-            for kfo = 1:length(DIMWI.theta)
-                
-                s(:,:,kfo) = obj.model_MCRMWI(b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewmw,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI_curr,T3D_all);
-            end
-            s = sum(bsxfun(@times,s,permute(DIMWI.ff(:),[2 3 1])),3);
+            s = obj.model_MCRDIMWI_nFOD(b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewmw,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI,T3D_all);
             
         end
 
         %% Signal models
         % Bloch-McConnell 2-pool exchange steady-state signal
         function [s,ss_pool] = model_BM_2T1(obj,M0r,M0f,t1r,t1f,krf,kfr,b1)
+        % s: sum of all species
+        % ss_pool: 1st dim: pool; 2nd dim: flip angles
             if nargin < 8
                 b1 = 1;
             end
@@ -655,7 +754,8 @@ classdef MCRMWI
 
         % Bloch non-exchanging 3-pool steady-state model
         function s = model_Bloch_3T1(obj,m0mw,m0iw,m0ew,t1mw,t1iw,t1ew,b1)
-
+        % s     : non-exchange steady-state signal, 1st dim: pool; 2nd dim: flip angles
+        %
             if nargin < 8
                 b1 = 1;
             end
@@ -682,14 +782,58 @@ classdef MCRMWI
 
         end
 
-        % MCR-(DI)MWI T1-T2* signal model
-        function s = model_MCRMWI(obj,b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewmw,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI,T3D_all)
+        % EPG-X 2-pool steady-state model
+        function s = model_EPGX_2T1(obj,m0mw,m0iew,t1mw,t1iew,kiewm,t2siw,t2smw,freq_mw,freq_iew,b1,T3D_all)
+        % s: EPG-X steady-state signal; 1st dim: Pool; 2nd dim: flip angles
+        %
+            % Step 1: validate input variables
+            EPGX        = obj.epgx_params;
+
+            % total signal
+            m0 = m0mw + m0iew;
+
+            % EPG-X
+            % phiCycle    = obj.RF_phase_cycle(EPGX.npulse,EPGX.rfphase);
+            phiCycle    = EPGX.rfphase_cycle;
+            t1x         = [t1iew, t1mw]; 
+            t2x         = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
+    
+            fx = m0mw / (m0mw + m0iew);  % myelin volume fraction
+            fs = (freq_mw-freq_iew);     % frequency difference between long and short T1 compartments
+            
+            % compute saturation factor
+            SF = zeros(2,length(obj.fa));
+            % start with steady-state signals, longitudinal magnetisation (Mz)
+            z1_all = obj.model_Bloch_1T1(1-fx,  t1iew, b1)./sind(obj.fa*b1);
+            z2_all = obj.model_Bloch_1T1(fx,    t1mw,  b1)./sind(obj.fa*b1);
+            for ii=1:length(obj.fa)
+    
+                % 2 pools, with exchange
+                z1 = z1_all(ii);
+                z2 = z2_all(ii);
+                
+                % EPG-X core
+                tmp = obj.EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,obj.tr,t1x,t2x,fx,kiewm,'delta',fs,'kmax',10,'ss',[z1,z2]);
+    
+                % saturation factors, 1: IEW; 2:Myelin  
+                SF(1,ii) = tmp{2}(end);
+                SF(2,ii) = tmp{1}(end); 
+                % SF(ii,1) = abs(tmp{2}(end)); % updated: 20231223
+                % SF(ii,2) = abs(tmp{1}(end)); 
+            end
+
+            s = SF * m0;
+                
+        end
+
+        % MCR-(DI)MWI T1-T2* signal model for 1 fibre direction
+        function s = model_MCRDIMWI_1FOD(obj,b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewm,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI,T3D_all)
             
             % number of flip angles
             Nfa = numel(obj.fa);
 
             % Step 1: validate input variables
-            EPGX        = obj.epgx_params;
+            EPGX = obj.epgx_params;
 
             if ~DIMWI.isFitFreqMW || ~DIMWI.isFitFreqIW || ~DIMWI.isFitR2sEW
                 hcfmObj = HCFM(obj.te,obj.B0);
@@ -749,57 +893,21 @@ classdef MCRMWI
                 % derive tissue properties
                 myelinVolumeSignal      = Amw/obj.rho_mw;
                 IEWVolumeSignal         = Aiw + Aew;
-                volumeScaleFactor       = IEWVolumeSignal + myelinVolumeSignal;
                 v_ic                    = Aiw / IEWVolumeSignal;
                     
                 if EPGX.isEPG
-                    
-                    % EPG-X
-                    phiCycle    = RF_phase_cycle(EPGX.npulse,EPGX.rfphase);
-                    t1x         = [t1iew, t1mw]; 
-                    t2x         = [t2siw,t2smw]; % assuming T2* of iw has similar T2 of long T1 compartment
-            
-                    fx = myelinVolumeSignal/volumeScaleFactor;  % myelin volume fraction
-                    fs = (freq_mw-freq_iw);                     % frequency difference between long and short T1 compartments
-                    
-                    % compute saturation factor
-                    SF = zeros(length(obj.fa),2);
-                    % start with steady-state signals, longitudinal magnetisation (Mz)
-                    z1_all = obj.model_Bloch_1T1(1-fx,  t1iew, b1)./sind(obj.fa*b1);
-                    z2_all = obj.model_Bloch_1T1(fx,    t1mw,  b1)./sind(obj.fa*b1);
-                    for ii=1:length(obj.fa)
 
-                        % true flip angle
-                        alpha = obj.fa(ii)*b1;
-            
-                        % 2 pools, with exchange
-                        z1 = z1_all(ii);
-                        z2 = z2_all(ii);
-                        
-                        % EPG-X core
-                        tmp = EPGX_GRE_BMsplit_PrecomputedT(T3D_all{ii},phiCycle,obj.tr,t1x,t2x,fx,kiewmw,'delta',fs,'kmax',10,'ss',[z1,z2]);
-            
-                        % saturation factors, 1: IEW; 2:Myelin  
-                        SF(ii,1) = tmp{2}(end);
-                        SF(ii,2) = tmp{1}(end); 
-                        % SF(ii,1) = abs(tmp{2}(end)); % updated: 20231223
-                        % SF(ii,2) = abs(tmp{1}(end)); 
-                    end
-                    ss(1,:) = SF(:,1) * volumeScaleFactor * obj.rho_mw;        % MW = Myelin volume * MW density
-                    ss(2,:) = SF(:,2) * volumeScaleFactor * v_ic;               % IW = IEW * v_ic
-                    ss(3,:) = SF(:,2) * volumeScaleFactor * (1 - v_ic);         % EW = IEW * (1-v_ic)
+                    % EPG-X
+                    ss_pool = obj.model_EPGX_2T1(myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,kiewm,t2siw,t2smw,freq_mw,freq_iw,b1,T3D_all);
                     
                 else
-
-                    % Exchange only, no need to multiply volumeScaleFactor as direct
-                    % volume is used instead of volume fraction
-                    % 20220209: bug fix 
-                    [~,ss_pool] = obj.model_BM_2T1(myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewmw,b1);
-                    ss(1,:) = ss_pool(1,:) * obj.rho_mw;	     % MW = Myelin volume * MW density
-                    ss(2,:) = ss_pool(2,:) * v_ic;           % IW = IEW * v_ic
-                    ss(3,:) = ss_pool(2,:) * (1-v_ic);       % EW = IEW * (1-v_ic)
+                    % Bloch-McConnell 2-pool equation
+                    [~,ss_pool] = obj.model_BM_2T1(myelinVolumeSignal,IEWVolumeSignal,t1mw,t1iew,[],kiewm,b1);
                      
                 end
+                ss(1,:) = ss_pool(1,:) * obj.rho_mw;        % MW = Myelin volume * MW density
+                ss(2,:) = ss_pool(2,:) * v_ic;               % IW = IEW * v_ic
+                ss(3,:) = ss_pool(2,:) * (1 - v_ic);         % EW = IEW * (1-v_ic)
             else
                 % non-exchange steady-state
                 ss = obj.model_Bloch_3T1(Amw,Aiw,Aew,t1mw,t1iew,t1iew,b1);
@@ -821,6 +929,26 @@ classdef MCRMWI
                  Aew2D .* exp(te2D * (-1/t2sew + 1i*2*pi*freq_ew)).*exp(-d_e2D)) .* ... % S_EW
                  exp(1i*pini2D) .* exp(1i*2*pi*fbg2D.*te2D);                            % phase offset and total field
             
+        end
+
+        % MCR-(DI)MWI T1-T2* signal model for all fibre directions
+        function s = model_MCRDIMWI_nFOD(obj,b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewm,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI,T3D_all)
+            
+            Nfa = numel(obj.fa);
+            Nte = numel(obj.te);
+
+            DIMWI.ff = DIMWI.ff ./ sum(DIMWI.ff);
+            
+            s = zeros([Nte Nfa length(DIMWI.ff)]);
+            DIMWI_curr = DIMWI;
+            for kfo = 1:length(DIMWI.theta)
+
+                DIMWI_curr.theta = DIMWI.theta(kfo);
+                
+                s(:,:,kfo) = obj.model_MCRDIMWI_1FOD(b1,Amw,Aiw,Aew,t2smw,t2siw,t2sew,t1mw,t1iew,kiewm,freq_mw,freq_iw,freq_ew,fbg,pini,DIMWI_curr,T3D_all);
+            end
+            s = sum(bsxfun(@times,s,permute(DIMWI.ff(:),[2 3 1])),3);
+
         end
 
         %% Utility functions
@@ -868,6 +996,7 @@ classdef MCRMWI
            
             % check advanced starting points strategy
             try algoPara2.advancedStarting  = algoPara.advancedStarting;catch; algoPara2.advancedStarting = [];end
+            try algoPara2.jacobian          = algoPara.jacobian;        catch; algoPara2.jacobian = 'off';end
             
             %%%%%%%%%% 2. check data integrity %%%%%%%%%%
             disp('-----------------------');
@@ -928,7 +1057,7 @@ classdef MCRMWI
                 end
             end
             
-            try imgPara2.autoSave = imgPara.autoSave; catch; imgPara2.autoSave = true; end
+            try algoPara2.autoSave = algoPara.autoSave; catch; algoPara2.autoSave = true; end
             disp('Input data is valid.')
             
             % determine the number of estimates
@@ -959,7 +1088,7 @@ classdef MCRMWI
         end
 
         % display fitting algorithm information
-        function display_message(obj,algoPara)
+        function display_algorithm_info(obj,algoPara)
         
             %%%%%%%%%% 3. display some algorithm parameters %%%%%%%%%%
             disp('--------------');
@@ -1035,8 +1164,8 @@ classdef MCRMWI
             end
             if obj.epgx_params.isEPG
                 disp('EPG - True');
-                fprintf('No. of RF pulses to equilibrium: %i\n', algoPara.npulse);
-                fprintf('Initial RF phase               : %i\n', algoPara.rfphase);
+                fprintf('No. of RF pulses to equilibrium: %i\n', obj.epgx_params.npulse);
+                fprintf('Initial RF phase               : %i\n', obj.epgx_params.rfphase);
             else
                 disp('EPG - no EPG simulation');
             end
@@ -1216,8 +1345,9 @@ classdef MCRMWI
 
     end
 
-    methods(Static)
+    methods (Static)
 
+        %% EPG-X related function, originally from Shaihan Malik's code
         function  T3D = PrecomputeT(phi,B1)
         %   [F0,Fn,Zn,F] = EPGX_GRE_BM(theta,phi,TR,T1x,T2x,f,ka,varargin)
         %
@@ -1369,6 +1499,426 @@ classdef MCRMWI
                     T(i1(i2):ksft:end)=AA(i2);
                 end
             end
+        
+        end
+
+        function [ phi ] = RF_phase_cycle( N, arg2 )
+        %   RF_phase_cycle(N, args) Supplies phase cycling pattern to EPG code
+        %
+        %   SPGR: phi = RF_phase_cycle(N,Phi0) 
+        %               N    = number of RF pulses
+        %               Phi0 = (quadratic) spoiling phase increment DEGREES
+        %
+        %   balanced: phi = RF_phase_cycle(N,'balanced')
+        %             produces [0 pi] cycling
+        %
+        %   Shaihan Malik July 2017
+        
+        if ~ischar(arg2)
+            spgr = true;
+            Phi0 = arg2*pi/180; %<-- degree to radian
+        else
+            spgr = false;
+        end
+        
+        if spgr
+            % Quadratic 
+            p = 1:N;
+            phi = p.*(p-1)/2 * Phi0;
+        else
+            % balanced case
+            if mod(N,2)==0
+                phi = repmat([0 pi],[1 N/2]);
+            else
+                phi = [repmat([0 pi],[1 floor(N/2)]) 0];
+            end
+        end
+        
+        end
+
+        function [F0,Fn,Zn,F] = EPGX_GRE_BMsplit_PrecomputedT(T3D,phi,TR,T1x,T2x,f,ka,varargin)
+        %   [F0,Fn,Zn,F] = EPGX_GRE_BM(theta,phi,TR,T1x,T2x,f,ka,varargin)
+        %
+        %   EPG-X for Bloch McConnell coupled systems w/ gradient echo sequences
+        %
+        %   arguments:
+        %               theta:      vector of flip angles (rad) - length = #pulses
+        %               phi:        phase per pulse. This function can hence be
+        %                           used to simulate RF spoiling or balanced
+        %                           sequences depending on how phase is cycled
+        %                           see function RF_phase_cycle()
+        %               TR:         repetition time, ms
+        %               T1x:        [T1a T1b], ms
+        %               T2x:        [T2a T2b], ms
+        %               f:          fraction of compartment b
+        %               ka:         forward exchange rate from a->b (units ms^-1)
+        %
+        %   optional arguments (use string then value as next argument)
+        %
+        %               kmax:       maximum EPG order to include. Can be used to
+        %                           accelerate calculation. 
+        %                           Setting kmax=inf ensures ALL pathways are
+        %                           computed
+        %              diff:        structure with fields:
+        %                           G    - Gradient amplitude(s)
+        %                           tau  - Gradient durations(s)
+        %                           D    - Diffusion coeff m^2/s (i.e. expect 10^-9)
+        %           * Diffusion is same in both compartments, this is experimental *
+        %
+        %               prep:       can be used to simulate prep pulse prior to
+        %                           gradient echo. Assume all transverse
+        %                           magnetization after prep is spoiled.
+        %                           structure with fields:
+        %                           flip    -   flip angle, rad
+        %                           t_delay -   time delay, ms
+        %
+        %
+        %               delta:      frequency offset of pool b, kHz 
+        %
+        %   Outputs:                
+        %               F0:         signal (F0 state) directly after each
+        %                           excitation (saturation factor(s))
+        %               Fn:         full EPG diagram for all transverse states
+        %               Zn:         full EPG diagram for all longitudinal states
+        %               F:          full state matrix. Each column is arranged as
+        %                           [F0a F0a* Z0a F0b F0b* Z0b F1a F-1a* Z1a F1b F-1b* Z1b ...] etc
+        %
+        %
+        %   Shaihan Malik 2017-07-20
+        % Adopted for MCR-MWI fitting 
+        % Kwok-Shing Chan 20240104
+        %
+        
+        
+        %% Extra variables
+        
+        for ii=1:length(varargin)
+            
+            % Kmax = this is the maximum EPG 'order' to consider
+            % If this is infinity then don't do any pruning
+            if strcmpi(varargin{ii},'kmax')
+                kmax = varargin{ii+1};
+            end
+            
+            % Diffusion - structure contains, G, tau, D
+            if strcmpi(varargin{ii},'diff')
+                diff = varargin{ii+1};
+            end
+            
+            % Prep pulse - struct contains flip (rad), t_delay
+            if strcmpi(varargin{ii},'prep')
+                prep = varargin{ii+1};
+            end
+            
+            % chemical shift of pool b, for phase gain during evolution period
+            if strcmpi(varargin{ii},'delta')
+                delta = 2*pi*varargin{ii+1};
+            end
+            
+            % EXPERIMENTAL: allow excitation of pool-b to have different rotation
+            % than pool-a
+            if strcmpi(varargin{ii},'offres')
+                offres = varargin{ii+1};
+            end
+            
+            % start with steady-state signal
+            if strcmpi(varargin{ii},'ss')
+                ss = varargin{ii+1};
+            end
+            
+        %     % Calculate the true signal if m0 is provided
+        %     if strcmpi(varargin{ii},'m0')
+        %         m0 = varargin{ii+1};
+        %     end
+        end
+        
+        if ~exist('offres','var')
+            offres=1;
+        end
+        if ~exist('delta','var')
+            delta=0;
+        end
+        
+        %%% The maximum order varies through the sequence. This can be used to speed up the calculation    
+        np = length(phi);
+        % if not defined, assume want max
+        if ~exist('kmax','var')
+            kmax = np - 1;
+        end
+        
+        if isinf(kmax)
+            % this flags that we don't want any pruning of pathways
+            allpathways = true;
+            kmax = np - 1; % this is maximum value
+        else
+            allpathways = false;
+        end
+        
+        %%% Variable pathways
+        if allpathways
+            % simplest case, where we just compute everything
+            kmax_per_pulse = 0:kmax;
+        else
+            % first do case where user hasn't dropped the number
+            kmax_per_pulse = [1:ceil(np/2) (floor(np/2)):-1:1];
+            kmax_per_pulse(kmax_per_pulse>kmax)=kmax;
+             
+            if max(kmax_per_pulse)<kmax
+               kmax = max(kmax_per_pulse);
+            end
+            
+            % 2017-09-11
+            % want to avoid trimming the profiles at the end, this is a problem
+            % for bSSFP calculations, so just disable for now
+            if kmax<(np-1)
+                % this means user has trimmed
+                kmax_per_pulse(kmax:end)=kmax;
+            end
+        end
+        
+        %%% Number of states is 6x(kmax +1) -- +1 for the zero order
+        N=6*(kmax+1);
+        
+        %% Dependent variables for exchange case
+        % if exist('m0','var')
+        %     M0b = f * m0;
+        %     M0a = (1-f) * m0;
+        % else
+        %     M0b = f;
+        %     M0a = (1-f);
+        % end
+        M0b = f;
+        M0a = (1-f);
+        kb = ka * M0a/M0b;
+        
+        R1a = 1/T1x(1);
+        R1b = 1/T1x(2);
+        R2a = 1/T2x(1);
+        R2b = 1/T2x(2);
+        
+        %%% handle single pool case
+        if (f==0)%%||(ka==0)
+            ka = 0;
+            kb = 0;
+            M0b = 0;
+            R1b = 1e-3;%<- doesn't matter what it is, just avoid singular matrices
+        end
+        
+        %%% Build Shift matrix, S
+        S = EPGX_BM_shift_matrices(kmax);
+        S = sparse(S);
+        
+        %% Set up matrices for Relaxation and Exchange
+        
+        %%% Relaxation-exchange matrix for transverse components
+        Lambda_T = diag([-R2a-ka -R2a-ka -R2b-kb-1i*delta -R2b-kb+1i*delta]);
+        
+        Lambda_T(1,3) = kb;
+        Lambda_T(2,4) = kb;
+        Lambda_T(3,1) = ka;
+        Lambda_T(4,2) = ka;
+        Xi_T = expm(TR*Lambda_T); %<-- operator for time period TR
+        
+        %%% Relaxation-exchange matrix for Longitudinal components
+        Lambda_L = [[-R1a-ka kb];[ka -R1b-kb]];
+        Xi_L = expm(TR*Lambda_L); 
+        
+        % For inhomogeneous solution also need:
+        C_L = [M0a*R1a;M0b*R1b];
+        Zoff = (Xi_L - eye(2))*(Lambda_L\C_L);
+        
+        % Now build full matrix Xi
+        Xi = zeros(6);
+        Xi([1 2 4 5],[1 2 4 5])=Xi_T;
+        Xi([3 6],[3 6])=Xi_L;
+        
+        
+        %%% regrowth
+        b = zeros([N 1]);
+        b([3 6]) = Zoff;%<--- just applies to the Z0b and Z0b states, not Z1,2 etc
+        
+        %%% Add in diffusion at this point - this is an experimental feature
+        if exist('diff','var')
+           Xi = Xi_diff_BM(Xi_T,Xi_L,diff,kmax,N);
+        else
+           % If no diffusion, Xi is the same for all EPG orders
+           Xi = kron(eye(kmax+1),Xi);
+        end
+            
+        
+        %%% Composite exchange-relax-shift
+        XS=S*Xi;XS=sparse(XS);
+        
+        
+        % store the indices of the top 6x6 corner, this helps build_T
+        % i1 = [];
+        % for ii=1:6
+        %     i1 = cat(2,i1,sub2ind(size(T),1:6,ii*ones(1,6)));
+        % end
+        
+        
+        %% F matrix (many elements zero, use sparse represenatation)
+        F = zeros([N np]); %%<-- records the state after each RF pulse 
+        
+        %%% Initial State
+        FF = zeros([N 1]);
+        % if exist('m0','var')
+        %     FF(3)=(1-f)*m0;   %Z0a
+        %     FF(6)=f*m0;     %Z0b
+        % else
+        %     FF(3)=1-f;   %Z0a
+        %     FF(6)=f;     %Z0b
+        % end
+        
+        if exist('ss','var')
+        %     FF(3)=ss(1)/sum(ss);
+        %     FF(6)=ss(2)/sum(ss);
+            FF(3)=ss(1);
+            FF(6)=ss(2);
+        else
+        
+        FF(3)=1-f;   %Z0a
+        FF(6)=f;     %Z0b
+        
+        end
+        %% Prep pulse - execute here
+        if exist('prep','var')
+            %%% Assume the prep pulse leaves NO transverse magnetization, or that
+            %%% this is spoiled so that it cannot be refocused. Only consider
+            %%% z-terms
+            
+            % RF rotation just cos(theta) on both Mz terms
+            R = diag([cos(prep.flip) cos(prep.flip)]);
+            zidx = [3 6];
+            FF(zidx)=R*FF(zidx);
+            
+            % Now apply time evolution during delay period
+            Xi_L_prep = expm(prep.t_delay*Lambda_L); 
+            Zoff_prep = (Xi_L_prep - eye(2))*(Lambda_L\C_L);
+            FF([3 6]) = Xi_L_prep * FF([3 6]) + Zoff_prep;
+            
+        end
+        
+        %% Main body of gradient echo sequence, loop over TRs 
+        %     T = zeros(N,N);
+        %     T = sparse(T);
+        %     
+        %     % store the indices of the top 6x6 corner, this helps build_T
+        %     i1 = [];
+        %     for ii=1:6
+        %         i1 = cat(2,i1,sub2ind(size(T),1:6,ii*ones(1,6)));
+        %     end
+        
+        for jj=1:np 
+            %%% RF transition matrix
+            
+            %%% Variable order of EPG, speed up calculation
+            kmax_current = kmax_per_pulse(jj);
+            kidx = 1:6*(kmax_current+1); %+1 because states start at zero
+            
+            %%% Replicate A to make large transition matrix
+        %     T = T3D(:,:,jj);
+            T = T3D{jj};
+            %%% Apply flip and store this: splitting these large matrix
+            %%% multiplications into smaller ones might help
+            F(kidx,jj)=T(kidx,kidx)*FF(kidx);
+            
+            if jj==np
+                break
+            end
+           
+        
+            %%% Now deal with evolution. 
+            FF(kidx) = XS(kidx,kidx)*F(kidx,jj)+b(kidx);
+            FF([1 4])=conj(FF([1 4])); %<---- F0 comes from F-1 so conjugate (do F0a and F0b)
+        end
+        
+        
+        %%% Return two compartments signal demodulated
+        F0{1}=(F(1,:).').* exp(-1i*phi(:)) *1i;
+        F0{2}=(F(4,:).').* exp(-1i*phi(:)) *1i;
+        
+        
+        %%% Construct Fn and Zn
+        idx=[fliplr(8:6:size(F,1)) 1 7:6:size(F,1)]; 
+        kvals = -kmax:kmax;
+        
+        %%% Now reorder
+        FnA = F(idx,:);
+        %%% Conjugate
+        FnA(kvals<0,:)=conj(FnA(kvals<0,:));
+        
+        %%% Repeat for Fnb - shift indices by 3
+        FnB = F(idx+3,:);
+        %%% Conjugate
+        FnB(kvals<0,:)=conj(FnB(kvals<0,:));
+        
+        Fn = cat(3,FnA,FnB);
+        
+        %%% Similar for Zn
+        ZnA = F(3:6:end,:);
+        ZnB = F(6:6:end,:);
+        Zn = cat(3,ZnA,ZnB);
+        
+        
+        
+        %     %%% NORMAL EPG transition matrix but replicated twice 
+        %     % As per Weigel et al JMR 2010 276-285 
+        %     function Tap = RF_rot(a,p)
+        %         Tap = zeros([3 3]);
+        %         Tap(1) = cos(a/2).^2;
+        %         Tap(2) = exp(-2*1i*p)*(sin(a/2)).^2;
+        %         Tap(3) = -0.5*1i*exp(-1i*p)*sin(a);
+        %         Tap(4) = conj(Tap(2));
+        %         Tap(5) = Tap(1);
+        %         Tap(6) = 0.5*1i*exp(1i*p)*sin(a);
+        %         Tap(7) = -1i*exp(1i*p)*sin(a);
+        %         Tap(8) = 1i*exp(-1i*p)*sin(a);
+        %         Tap(9) = cos(a);
+        %         Tap = kron(eye(2),Tap);
+        %     end
+        % 
+        %     % New version, rotates pool b differently
+        %     function Tap = RF_rot_v2(a,p)
+        %         Tap = zeros([6 6]);
+        %         
+        %         % pool a
+        %         Tap(1) = cos(a/2).^2;
+        %         Tap(2) = exp(-2*1i*p)*(sin(a/2)).^2;
+        %         Tap(3) = -0.5*1i*exp(-1i*p)*sin(a);
+        %         Tap(7) = conj(Tap(2));
+        %         Tap(8) = Tap(1);
+        %         Tap(9) = 0.5*1i*exp(1i*p)*sin(a);
+        %         Tap(13) = -1i*exp(1i*p)*sin(a);
+        %         Tap(14) = 1i*exp(-1i*p)*sin(a);
+        %         Tap(15) = cos(a);
+        %         
+        %         % pool b
+        %         a = a*offres;
+        %         Tap(22) = cos(a/2).^2;
+        %         Tap(23) = exp(-2*1i*p)*(sin(a/2)).^2;
+        %         Tap(24) = -0.5*1i*exp(-1i*p)*sin(a);
+        %         Tap(28) = conj(Tap(23));
+        %         Tap(29) = Tap(22);
+        %         Tap(30) = 0.5*1i*exp(1i*p)*sin(a);
+        %         Tap(34) = -1i*exp(1i*p)*sin(a);
+        %         Tap(35) = 1i*exp(-1i*p)*sin(a);
+        %         Tap(36) = cos(a);
+        %     end
+        % 
+        %     function build_T(AA)
+        %         ksft = 6*(6*(kmax+1)+1);
+        %         for i2=1:36
+        %             T(i1(i2):ksft:end)=AA(i2);
+        %         end
+        %     end
+        
+        end
+
+        % Function to convert degrees to radians 29-10-12
+        function r = d2r(d)
+        
+            r = d * pi/180;
         
         end
 
