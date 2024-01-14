@@ -77,7 +77,7 @@ classdef despot1
             m0 = zeros([prod(dims(1:3)) 1]);
             for k = 1:size(img,1)
                 if sum(img(k,:)) ~= 0
-                    [t1(ind(k)), m0(ind(k))] = obj.fit(img(k,:),b1(k),'regression');
+                    [m0(ind(k)), t1(ind(k))] = obj.fit(img(k,:),b1(k),'regression');
                 else
                     % avoid matrix inversion with zero matrix
                     t1(ind(k)) = 0; m0(ind(k)) = 0;

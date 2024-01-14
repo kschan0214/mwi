@@ -1,10 +1,10 @@
 classdef MCRMWI
 % This class implements the equations in 
-% Chan, K.-S., Marques, J.P., 2020. Multi-compartment relaxometry and diffusion informed myelin water imaging – 
+% Chan, K.-S., Marques, J.P., 2020. Multi-compartment relaxometry and diffusion informed myelin water imaging  
 % Promises and challenges of new gradient echo myelin water imaging methods. 
 % Neuroimage 221, 117159. https://doi.org/10.1016/j.neuroimage.2020.117159
 % Chan, K.-S., Chamberland, M., Marques, J.P., 2023. On the performance of multi-compartment relaxometry for 
-% myelin water imaging (MCR-MWI) – test-retest repeatability and inter-protocol reproducibility. 
+% myelin water imaging (MCR-MWI)  test-retest repeatability and inter-protocol reproducibility. 
 % Neuroimage 266, 119824. https://doi.org/10.1016/j.neuroimage.2022.119824
 %
 % Kwok-Shing Chan @ MGH
@@ -541,7 +541,14 @@ classdef MCRMWI
             DIMWI.theta = extraData.theta;
             DIMWI.ff    = extraData.ff;
             DIMWI.icvf  = extraData.icvf;
-            [x,resnorm,~,exitflag,output] = lsqnonlin(@(x)obj.residuals(x,y,b1,DIMWI, w,fitParams,T3D_all),x0,lb,ub,options);
+            try
+                [x,resnorm,~,exitflag,output] = lsqnonlin(@(x)obj.residuals(x,y,b1,DIMWI, w,fitParams,T3D_all),x0,lb,ub,options);
+            catch
+                x = zeros(size(x0));
+                resnorm = nan;
+                exitflag = nan;
+                output.iterations = nan;
+            end
 
             %%%%%%%%%% Step 4: get fitted parameters  %%%%%%%%%%
             counter = 1;
