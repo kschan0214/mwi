@@ -7,6 +7,8 @@ classdef MCRMWI
 % myelin water imaging (MCR-MWI)  test-retest repeatability and inter-protocol reproducibility. 
 % Neuroimage 266, 119824. https://doi.org/10.1016/j.neuroimage.2022.119824
 %
+% Two models are included: (1) MCR-MWI and (2) MCR-DIMWI
+%
 % Kwok-Shing Chan @ MGH
 % kchan2@mgh.harvard.edu
 % Date created: 4 January 2024
@@ -883,9 +885,9 @@ classdef MCRMWI
                 % assume extracellular water has the same T2* as intra-axonal water
                 t2sew = t2siw;
 
-                fvf = hcfmobj.FibreVolumeFraction(abs(Aiw),abs(Aiw),abs(Amw)/obj.rho_mw);
+                fvf = hcfmObj.FibreVolumeFraction(abs(Aiw),abs(Aiw),abs(Amw)/obj.rho_mw);
                 % signal dephase in extracellular water due to myelin sheath, Eq.[A7]
-                d_e = hcfmobj.DephasingExtraaxonal(fvf,g,obj.x_i,obj.x_a,DIMWI.theta);
+                d_e = hcfmObj.DephasingExtraaxonal(fvf,g,obj.x_i,obj.x_a,DIMWI.theta);
                 
                 
             else

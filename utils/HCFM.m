@@ -202,6 +202,7 @@ classdef HCFM
             c1(g==1)    = 1/4 - 3/2;
         end
 
+        % Compute compartmental volume fractions given gratio and FVF
         function [v_myelin,v_axon,v_ec] = VolumeFraction(fvf,g)
         %
         % Input
@@ -226,6 +227,18 @@ classdef HCFM
             v_axon  	= fvf .* g.^2;
             v_ec        = 1-fvf;
         
+        end
+    
+        % Compute g-ratio given volume fraction of intra-axonal and myelin volume
+        function g = gratio(Va,Vm)
+             g = sqrt(abs(Va)./(abs(Va)+abs(Vm)));
+  
+        end
+
+        function fvf = FibreVolumeFraction(Va,Ve,Vm)
+            Va = Va / (Va+Ve+Vm);
+            Vm = Vm / (Va+Ve+Vm);
+            fvf = Va+Vm; 
         end
     end
 
