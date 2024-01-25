@@ -328,7 +328,7 @@ classdef MCRMWI
                     end
 
                     % display current batch number
-                    fprintf('#Batch %3d/%d',kbat,Nbatch);
+                    fprintf('#Slice %3d/%d',kbat,Nbatch);
 
                     if isFit 
                         if isBatch
@@ -438,7 +438,7 @@ classdef MCRMWI
                             fprintf(',   #Voxel = %6d',NSamples);
                         end
                         fprintf(',    Elapsed(MM:SS): %s ',string(res_obj.timeElapsed ));
-                        fprintf(',    this batch is previously processed.\n')
+                        fprintf(',    this slice is previously processed.\n')
                     end
                 end
 
@@ -874,7 +874,7 @@ classdef MCRMWI
                 if ~DIMWI.isFitFreqMW 
                     freq_mw = hcfmObj.FrequencyMyelin(obj.x_i,obj.x_a,g,DIMWI.theta,obj.E);
                 end
-                if ~DIMWI.isFitFreqMW 
+                if ~DIMWI.isFitFreqIW 
                     freq_iw = hcfmObj.FrequencyAxon(obj.x_a,g,DIMWI.theta);
                 end
             end
@@ -885,7 +885,7 @@ classdef MCRMWI
                 % assume extracellular water has the same T2* as intra-axonal water
                 t2sew = t2siw;
 
-                fvf = hcfmObj.FibreVolumeFraction(abs(Aiw),abs(Aiw),abs(Amw)/obj.rho_mw);
+                fvf = hcfmObj.FibreVolumeFraction(abs(Aiw),abs(Aew),abs(Amw)/obj.rho_mw);
                 % signal dephase in extracellular water due to myelin sheath, Eq.[A7]
                 d_e = hcfmObj.DephasingExtraaxonal(fvf,g,obj.x_i,obj.x_a,DIMWI.theta);
                 

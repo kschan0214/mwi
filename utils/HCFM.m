@@ -5,7 +5,7 @@ classdef HCFM
 % Kwok-Shing Chan @ MGH
 % kchan2@mgh.harvard.edu
 % Date created: 19 Sep 2023
-% Date modified:
+% Date modified: 21 Jan 2024
 %
     properties (Constant)
         gyro = 2*pi*42.57747892;
@@ -88,16 +88,30 @@ classdef HCFM
             alpha = obj.TransitionTimeExtraaxonal(x_i,x_a,g,theta);
             % Eq.A9 Wharton.NI2013
             x_d   = obj.EffectiveSusceptibility(x_i,x_a,g);
-            
-            D_E = zeros(size(obj.t));
-            for kt=1:length(obj.t)
-                if obj.t(kt) < alpha
-                    D_E(kt) = (fvf/16)*(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2*obj.t(kt))^2;
-                else
-                    D_E(kt) = (fvf/2)*(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2)*...
-                        (obj.t(kt) - 2./(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2));
-                end
+
+            if isscalar(alpha)
+                dims = 1;
+            else
+                dims = ndims(alpha);
             end
+
+            TE = ones(size(alpha)).*permute(obj.t,[2:dims+1 1]);
+            D_E_quadratic   = (fvf./16).*(abs(x_d).*obj.gyro.*obj.B0.*sin(theta).^2 .* TE).^2;
+            D_E_linear      = (fvf/2).*(abs(x_d).*obj.gyro.*obj.B0.*sin(theta).^2).*...
+                                    (TE - 2./(abs(x_d).*obj.gyro.*obj.B0.*sin(theta).^2));
+            D_E             = zeros(size(D_E_linear));
+            D_E(TE<alpha)   = D_E_quadratic(TE<alpha);
+            D_E(TE>=alpha)  = D_E_linear(TE>=alpha);
+            
+            % D_E = zeros(size(obj.t));
+            % for kt=1:length(obj.t)
+            %     if obj.t(kt) < alpha
+            %         D_E(kt) = (fvf/16)*(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2*obj.t(kt))^2;
+            %     else
+            %         D_E(kt) = (fvf/2)*(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2)*...
+            %             (obj.t(kt) - 2./(abs(x_d)*obj.gyro*obj.B0*sin(theta).^2));
+            %     end
+            % end
         end
 
         function freq   = FrequencyMyelin(obj,x_i,x_a,g,theta,E)
@@ -125,7 +139,8 @@ classdef HCFM
             c1 = obj.C1(g);
             
             % Eq.[5]
-            freq = ((x_i./2).*(2/3 - sin(theta).^2) + (x_a./2).*(c1.*sin(theta).^2 - 1/3) + E)*obj.gyro*obj.B0;
+            omega = ((x_i./2).*(2/3 - sin(theta).^2) + (x_a./2).*(c1.*sin(theta).^2 - 1/3) + E)*obj.gyro*obj.B0;
+            freq  = omega / (2*pi);
 
         end
 
@@ -151,8 +166,8 @@ classdef HCFM
         %
         %
             % Eq.[6]
-            freq = (3*x_a./4) .* sin(theta).^2 .* log(1./g) * obj.gyro*obj.B0;
-
+            omega   = (3*x_a./4) .* sin(theta).^2 .* log(1./g) * obj.gyro*obj.B0;
+            freq    = omega / (2*pi);
         end
 
     end
@@ -236,8 +251,8 @@ classdef HCFM
         end
 
         function fvf = FibreVolumeFraction(Va,Ve,Vm)
-            Va = Va / (Va+Ve+Vm);
-            Vm = Vm / (Va+Ve+Vm);
+            Va  = Va ./ (Va+Ve+Vm);
+            Vm  = Vm ./ (Va+Ve+Vm);
             fvf = Va+Vm; 
         end
     end
