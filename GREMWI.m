@@ -104,10 +104,14 @@ classdef GREMWI
 
             %%%%%%%%%% check advanced starting point strategy %%%%%%%%%%
             % use lowest flip angle to estimate R2*
-            r2s0            = R2star_trapezoidal(data,obj.te);
-            % r2s0            = R2star_trapezoidal(mean(data(:,:,:,:,:),5),obj.te);
+            [r2s0,~,m00]    = R2star_trapezoidal(data,obj.te);
             mask_valida_r2s = and(~isnan(r2s0),~isinf(r2s0));
-            r2s0(mask_valida_r2s == 0) = 0;
+            mask_valid_m0   = m00 > 0;
+            r2s0(mask_valida_r2s == 0)  = 0;
+            r2s0(mask_valid_m0==0)      = 0;
+            m00(mask_valida_r2s == 0)  = 0;
+            m00(mask_valid_m0==0)      = 0;
+
 
             % only works for 3T data
             advancedStarting = algoPara.advancedStarting;
@@ -443,7 +447,7 @@ classdef GREMWI
         function [fitRes, resnorm,exitflag,output] = fit(obj,y,extraData, DIMWI, fitParams,options)
 
             % if the fitting option is not provided then set up here
-            if nargin < 7
+            if nargin < 6
                 %%%%%%%%%% set fitting options %%%%%%%%%%
                 options = optimoptions(@lsqnonlin,'MaxIter',fitParams.maxIter,'MaxFunctionEvaluations',200*fitParams.numEst,...
                     'StepTolerance',fitParams.stepTol,'FunctionTolerance',fitParams.fcnTol,'Display','off',...
@@ -539,9 +543,9 @@ classdef GREMWI
                     pars_h          = pars;
                     pars_h(k)       = pars(k) + h;
                     if fitParams.isComplex
-                        tmp             = (obj.FWD(pars_h, b1, T3D_all, DIMWI, fitParams) - s)/h;
+                        tmp             = (obj.FWD(pars_h, DIMWI, fitParams) - s)/h;
                     else
-                        tmp             = (abs(obj.FWD(pars_h, b1, T3D_all, DIMWI, fitParams)) - s)/h;
+                        tmp             = (abs(obj.FWD(pars_h, DIMWI, fitParams)) - s)/h;
                     end
                     jacobian(:,k)   = tmp(:) .* w(:);
                 end
@@ -648,7 +652,7 @@ classdef GREMWI
                 fvf = hcfmObj.FibreVolumeFraction(abs(Aiw),abs(Aew),abs(Amw)/obj.rho_mw);
                 % signal dephase in extracellular water due to myelin sheath, Eq.[A7]
                 d_e = hcfmObj.DephasingExtraaxonal(fvf,g,obj.x_i,obj.x_a,DIMWI.theta);
-                
+                d_e = reshape(d_e,size(obj.te));
                 
             else
                 d_e = zeros(size(obj.te));
